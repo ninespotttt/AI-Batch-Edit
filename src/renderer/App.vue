@@ -19,39 +19,39 @@
         <div class="modal-header">
           <div>
             <h2>API设置</h2>
-            <p>填写自己的 RunningHub API Key，真实接口接入后会从这里读取。</p>
+            <p>填写 RunningHub API Key 后即可生成。</p>
           </div>
           <button class="icon-btn close-btn" @click="showSettings = false" title="关闭"><X :size="18" /></button>
         </div>
 
-        <div class="api-help">
-          <strong>API Key 申请地址</strong>
-          <a href="#" @click.prevent="openInviteLink"><ExternalLink :size="14" />https://www.runninghub.cn/?inviteCode=1bcdcd69</a>
-          <span>打开 API 控制台 → 企业级 → 共享 → 复制 APIkey</span>
-        </div>
-
         <div class="settings-form">
-          <div class="field">
-            <label>API Key</label>
-            <input v-model="config.runninghubApiKey" type="password" placeholder="粘贴 RunningHub API Key" />
+          <div class="setting-section">
+            <div class="field">
+              <label>API Key</label>
+              <input v-model="config.runninghubApiKey" type="password" placeholder="粘贴 RunningHub API Key" />
+            </div>
+            <div class="inline-help">
+              <a href="#" @click.prevent="openInviteLink"><ExternalLink :size="14" />申请 API Key</a>
+              <span>API 控制台 → 企业级 → 共享 → 复制 APIkey</span>
+            </div>
           </div>
 
-          <div class="field output-field">
-            <label>输出目录</label>
-            <input v-model="config.outputRoot" readonly />
-            <button class="icon-btn" @click="selectOutputRoot" title="选择输出目录"><FolderOpen :size="16" /></button>
+          <div class="setting-section">
+            <div class="field output-field">
+              <label>输出目录</label>
+              <input v-model="config.outputRoot" readonly />
+              <button class="icon-btn" @click="selectOutputRoot" title="选择输出目录"><FolderOpen :size="16" /></button>
+            </div>
           </div>
 
-          <div class="field">
-            <label>并发 {{ config.concurrency }}</label>
-            <input v-model.number="config.concurrency" type="range" min="1" max="100" />
-            <p class="field-help">并发就是同时生成的图片数量。电脑和网络越稳定，可以开得越高；如果出现失败变多，就适当调低。</p>
+          <div class="setting-section">
+            <div class="setting-title-row">
+              <label>并发数量</label>
+              <strong>{{ config.concurrency }}</strong>
+            </div>
+            <input class="range-input" v-model.number="config.concurrency" type="range" min="1" max="100" />
+            <p class="field-help">同时生成的任务数量。失败变多时调低即可。</p>
           </div>
-
-          <label class="check-row">
-            <input type="checkbox" v-model="config.simulateFailures" />
-            模拟少量失败任务
-          </label>
         </div>
 
         <div class="modal-actions">
