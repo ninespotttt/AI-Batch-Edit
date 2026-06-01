@@ -210,12 +210,19 @@ span {
   border: 2px dashed #cbd5e1;
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.drop-zone:hover {
+.drop-zone:hover,
+.drop-zone:focus-visible {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
+}
+
+.drop-zone:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .drop-zone strong {
@@ -399,6 +406,36 @@ textarea {
 textarea:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.field input.api-key-input {
+  min-height: 66px;
+  padding: 16px 18px;
+  border-width: 1px;
+  font-size: 18px;
+}
+
+.field input.api-key-input:focus {
+  border-color: var(--color-border);
+  box-shadow: none;
+}
+
+.field input.api-key-input.needs-api-key {
+  border-width: 2px;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 5px var(--color-primary-ring);
+}
+
+.field input.api-key-input.needs-api-key:focus {
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 0 6px var(--color-primary-ring);
+}
+
+.field input.api-key-input::placeholder {
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  font-weight: 400;
+  opacity: 0.58;
 }
 
 textarea {
@@ -623,10 +660,21 @@ textarea {
 }
 
 .inline-help a.copyable-url {
-  color: var(--color-text-secondary);
+  color: var(--color-primary);
   font-weight: 400;
   user-select: text;
   overflow-wrap: anywhere;
+}
+
+.api-key-link-row {
+  margin-top: 0;
+}
+
+.api-key-steps {
+  margin: -2px 0 2px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
 }
 
 .settings-form {
@@ -635,12 +683,12 @@ textarea {
 }
 
 .settings-error {
-  border: 1px solid var(--color-danger);
+  border: 1px solid #fecaca;
   border-radius: var(--radius-md);
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  padding: 10px 12px;
-  font-size: 13px;
+  background: #fff7f7;
+  color: #f87171;
+  padding: 8px 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -693,9 +741,89 @@ textarea {
   margin: 2px 0;
 }
 
+.history-panel {
+  margin-top: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.history-header p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.history-card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.history-card img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: block;
+  object-fit: cover;
+  background: var(--color-border-light);
+}
+
+.history-card-meta {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+}
+
+.history-card-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.history-card-meta span {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.history-open {
+  width: calc(100% - 20px);
+  margin: 0 10px 10px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.history-empty {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+}
+
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 360px));
   gap: 16px;
   margin-top: 18px;
 }
@@ -717,6 +845,15 @@ textarea {
 
 .task-card.success {
   border-color: var(--color-success);
+}
+
+.task-card.success .thumb-row {
+  grid-template-columns: 80px 80px;
+}
+
+.task-card.success .thumb-row img,
+.task-card.success .empty-target {
+  aspect-ratio: 1 / 1;
 }
 
 .thumb-row {
@@ -753,6 +890,12 @@ textarea {
 .result-box,
 .state-box {
   margin-top: 8px;
+}
+
+.result-box.complete img,
+.task-card.success .result-box img {
+  aspect-ratio: 3 / 4;
+  object-fit: contain;
 }
 
 .state-box {

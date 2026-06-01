@@ -60,14 +60,21 @@
         <div class="settings-form">
           <p v-if="settingsError" class="settings-error">{{ settingsError }}</p>
           <div class="setting-section">
-            <div class="field">
-              <label>API Key</label>
-              <input v-model="config.runninghubApiKey" type="password" placeholder="粘贴 RunningHub API Key" @input="settingsError = ''" />
-            </div>
-            <div class="inline-help">
+            <div class="inline-help api-key-link-row">
               <a class="api-key-label-link" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink"><ExternalLink :size="14" />申请 API Key</a>
               <a class="copyable-url" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink">{{ runninghubApiKeyUrl }}</a>
-              <span>API 控制台 → 企业级 → 共享 → 复制 APIkey</span>
+            </div>
+            <p class="api-key-steps">密钥获取方式：API 控制台 → 企业级 → 共享 → 复制 APIkey</p>
+            <div class="field">
+              <label>API Key</label>
+              <input
+                class="api-key-input"
+                :class="{ 'needs-api-key': !(config.runninghubApiKey || '').trim() }"
+                v-model="config.runninghubApiKey"
+                type="password"
+                placeholder="粘贴 RunningHub API Key"
+                @input="settingsError = ''"
+              />
             </div>
           </div>
 
@@ -170,6 +177,27 @@
       </div>
     </section>
 
+    <section v-if="view === 'setup'" class="history-panel">
+      <div class="history-header">
+        <div>
+          <h2>历史记录</h2>
+          <p>最近生成的图片会显示在这里，方便回看和打开当天目录。</p>
+        </div>
+        <button class="ghost" @click="loadHistory"><RotateCcw :size="16" />刷新</button>
+      </div>
+      <div v-if="historyItems.length > 0" class="history-grid">
+        <article v-for="item in historyItems" :key="item.path" class="history-card">
+          <img :src="item.url" :alt="item.name" />
+          <div class="history-card-meta">
+            <strong :title="item.name">{{ item.name }}</strong>
+            <span>{{ item.day }}</span>
+          </div>
+          <button class="ghost history-open" @click="openHistoryDir(item.dir)"><FolderOpen :size="14" />打开目录</button>
+        </article>
+      </div>
+      <div v-else class="history-empty">暂无历史图片</div>
+    </section>
+
     <section v-if="view === 'generation'" class="generation-view">
       <div class="generation-header">
         <div>
@@ -235,6 +263,7 @@ const showOnboarding = ref(false);
 const settingsError = ref('');
 const onboardingShownAt = ref(0);
 const onboardingError = ref('');
+const historyItems = ref([]);
 const tasks = ref([]);
 const batchDir = ref('');
 const stopped = ref(false);
@@ -280,6 +309,7 @@ onMounted(async () => {
   config.simulateFailures = false;
   params.aspectRatio = config.aspectRatio || 'auto';
   params.resolution = ['2K', '4K'].includes(config.resolution) ? config.resolution : '2K';
+  await loadHistory();
   showOnboarding.value = !config.onboardingCompleted;
   if (showOnboarding.value) onboardingShownAt.value = Date.now();
 });
@@ -352,6 +382,7 @@ async function selectOutputRoot() {
   if (selected) {
     config.outputRoot = selected;
     await saveConfig();
+    await loadHistory();
   }
 }
 
@@ -490,6 +521,7 @@ async function runTask(task) {
     task.statusMessage = '完成';
     task.outputPath = result.outputPath;
     task.outputUrl = result.outputUrl;
+    await loadHistory();
   } catch (error) {
     task.status = 'failed';
     task.statusMessage = error?.message || '生成失败';
@@ -597,6 +629,17 @@ function stateLabel(status) {
     stopped: '已停止'
   };
   return labels[status] || status;
+}
+
+async function loadHistory() {
+  historyItems.value = await window.batchApi.listHistory({
+    outputRoot: config.outputRoot,
+    limit: 24
+  });
+}
+
+function openHistoryDir(dir) {
+  window.batchApi.openPath(dir);
 }
 
 function openOutputRoot() {

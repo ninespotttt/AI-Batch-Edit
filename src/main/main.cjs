@@ -103,6 +103,35 @@ function writeManifest(batchDir, manifest) {
   fs.writeFileSync(path.join(batchDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
 }
 
+function listHistory(outputRoot, limit = 24) {
+  const root = outputRoot || loadConfig().outputRoot || defaultConfig().outputRoot;
+  if (!fs.existsSync(root)) return [];
+  const items = [];
+  const days = fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, entry.name));
+
+  for (const dayDir of days) {
+    for (const entry of fs.readdirSync(dayDir, { withFileTypes: true })) {
+      const filePath = path.join(dayDir, entry.name);
+      if (!entry.isFile() || !isImage(filePath)) continue;
+      const stat = fs.statSync(filePath);
+      items.push({
+        path: filePath,
+        url: toFileUrl(filePath),
+        name: entry.name,
+        day: path.basename(dayDir),
+        dir: dayDir,
+        mtimeMs: stat.mtimeMs
+      });
+    }
+  }
+
+  return items
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, Math.min(100, Math.max(1, Number(limit) || 24)));
+}
+
 function safeFilePart(value) {
   return String(value || '')
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
@@ -252,6 +281,10 @@ ipcMain.handle('manifest:write', (_event, payload) => {
   if (!batchDir || !manifest) throw new Error('manifest 参数不完整');
   writeManifest(batchDir, manifest);
   return true;
+});
+
+ipcMain.handle('history:list', (_event, payload) => {
+  return listHistory(payload?.outputRoot, payload?.limit);
 });
 
 ipcMain.handle('shell:openPath', async (_event, targetPath) => {

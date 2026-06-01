@@ -11,7 +11,16 @@
         <button class="ghost" :disabled="images.length === 0" @click="$emit('clear')"><Trash2 :size="16" />清空</button>
       </div>
     </div>
-    <div v-if="images.length === 0" class="drop-zone">
+    <div
+      v-if="images.length === 0"
+      class="drop-zone"
+      role="button"
+      tabindex="0"
+      title="点击添加图片"
+      @click="$emit('select-files')"
+      @keydown.enter.prevent="$emit('select-files')"
+      @keydown.space.prevent="$emit('select-files')"
+    >
       <strong>拖拽图片或文件夹到这里</strong>
       <span>支持 jpg、png、webp</span>
     </div>
@@ -45,7 +54,8 @@ const gridClass = computed(() => ({
 function handleDrop(event) {
   const paths = [];
   for (const file of event.dataTransfer.files || []) {
-    if (file.path) paths.push(file.path);
+    const filePath = window.batchApi?.getPathForFile?.(file) || file.path;
+    if (filePath) paths.push(filePath);
   }
   if (paths.length > 0) emit('drop-paths', paths);
 }
