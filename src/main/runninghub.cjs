@@ -225,10 +225,10 @@ class RunningHubClient {
 
   async generate({ image1Path, image2Path, prompt, model, aspectRatio, resolution }) {
     const spec = modelSpec(model);
-    const imageUrls = [
-      await this.uploadFile(image1Path),
-      await this.uploadFile(image2Path)
-    ];
+    const imageUrls = [await this.uploadFile(image1Path)];
+    if (image2Path) {
+      imageUrls.push(await this.uploadFile(image2Path));
+    }
     const payload = {
       prompt,
       imageUrls,

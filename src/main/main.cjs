@@ -111,7 +111,7 @@ async function runMockAdapter(task, options) {
   if (shouldFail || /模拟失败|test-fail|fail/i.test(options.prompt || '')) {
     throw new Error('模拟生成失败，用于验证重新生成流程');
   }
-  return task.image2Path;
+  return task.image2Path || task.image1Path;
 }
 
 async function runGenerationAdapter(task, options) {
@@ -224,13 +224,15 @@ ipcMain.handle('output:createBatch', (_event, payload) => {
 ipcMain.handle('generation:runTask', async (_event, payload) => {
   const { task, batchDir, options } = payload || {};
   if (!task || !batchDir) throw new Error('任务参数不完整');
-  if (!fs.existsSync(task.image1Path) || !fs.existsSync(task.image2Path)) {
+  if (!fs.existsSync(task.image1Path) || (task.image2Path && !fs.existsSync(task.image2Path))) {
     throw new Error('输入图片不存在');
   }
 
   const buffer = await runGenerationAdapter(task, options || {});
   const ext = '.png';
-  const outputName = `${String(task.index + 1).padStart(4, '0')}_图1-${task.image1Index + 1}_图2-${task.image2Index + 1}_${safeFilePart(path.basename(task.image2Path, path.extname(task.image2Path)))}${ext}`;
+  const sourceName = task.image2Path || task.image1Path;
+  const pairPart = task.image2Path ? `目标-${task.image2Index + 1}` : '单图';
+  const outputName = `${String(task.index + 1).padStart(4, '0')}_参考-${task.image1Index + 1}_${pairPart}_${safeFilePart(path.basename(sourceName, path.extname(sourceName)))}${ext}`;
   const outputPath = path.join(batchDir, outputName);
   fs.writeFileSync(outputPath, buffer);
   return {

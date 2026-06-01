@@ -719,13 +719,29 @@ textarea {
   gap: 8px;
 }
 
+.thumb-row.single {
+  grid-template-columns: 1fr 1fr;
+}
+
 .thumb-row img,
-.result-box img {
+.result-box img,
+.empty-target {
   width: 100%;
   aspect-ratio: 1 / 1;
-  object-fit: cover;
   border-radius: var(--radius-sm);
   background: var(--color-border-light);
+}
+
+.thumb-row img,
+.result-box img {
+  object-fit: cover;
+}
+
+.empty-target {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
 }
 
 .result-box,

@@ -184,9 +184,10 @@
       </div>
       <div class="cards-grid">
         <article v-for="task in tasks" :key="task.id" class="task-card" :class="task.status">
-          <div class="thumb-row">
+          <div class="thumb-row" :class="{ single: !task.image2Preview }">
             <img :src="task.image1Preview" alt="参考素材" />
-            <img :src="task.image2Preview" alt="目标图片" />
+            <img v-if="task.image2Preview" :src="task.image2Preview" alt="目标图片" />
+            <div v-else class="empty-target">单图生成</div>
           </div>
           <div v-if="task.outputUrl" class="result-box">
             <img :src="task.outputUrl" alt="生成结果" />
@@ -262,8 +263,8 @@ const params = reactive({
   resolution: '2K'
 });
 
-const totalTasks = computed(() => imageSetA.value.length * imageSetB.value.length);
-const canStart = computed(() => imageSetA.value.length > 0 && imageSetB.value.length > 0 && prompt.value.trim().length > 0);
+const totalTasks = computed(() => (imageSetA.value.length > 0 ? imageSetA.value.length * Math.max(1, imageSetB.value.length) : 0));
+const canStart = computed(() => imageSetA.value.length > 0 && prompt.value.trim().length > 0);
 const completedCount = computed(() => tasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
 const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
 const failedCount = computed(() => tasks.value.filter((task) => task.status === 'failed').length);
@@ -411,16 +412,17 @@ function buildTasks() {
   const next = [];
   let index = 0;
   imageSetA.value.forEach((a, image1Index) => {
-    imageSetB.value.forEach((b, image2Index) => {
+    const targets = imageSetB.value.length > 0 ? imageSetB.value : [null];
+    targets.forEach((b, image2Index) => {
       next.push({
         id: `${image1Index}-${image2Index}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         index,
         image1Index,
-        image2Index,
+        image2Index: b ? image2Index : -1,
         image1Path: a.path,
-        image2Path: b.path,
+        image2Path: b?.path || '',
         image1Preview: a.previewUrl,
-        image2Preview: b.previewUrl,
+        image2Preview: b?.previewUrl || '',
         outputPath: '',
         outputUrl: '',
         status: 'queued',
