@@ -15,7 +15,7 @@
       <strong>拖拽图片或文件夹到这里</strong>
       <span>支持 jpg、png、webp</span>
     </div>
-    <div v-else class="image-grid">
+    <div v-else :class="gridClass">
       <figure v-for="image in images" :key="image.path">
         <button class="remove-image" @click="$emit('remove', image.path)" title="删除这张"><X :size="14" /></button>
         <img :src="image.previewUrl" :alt="image.name" />
@@ -26,14 +26,21 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { FolderOpen, ImagePlus, Trash2, X } from 'lucide-vue-next';
 
-defineProps({
+const props = defineProps({
   title: { type: String, required: true },
   images: { type: Array, required: true }
 });
 
 const emit = defineEmits(['select-folder', 'select-files', 'drop-paths', 'remove', 'clear']);
+
+const gridClass = computed(() => ({
+  'image-grid': true,
+  'dense-4': props.images.length > 8 && props.images.length <= 10,
+  'dense-5': props.images.length > 10
+}));
 
 function handleDrop(event) {
   const paths = [];

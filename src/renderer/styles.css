@@ -159,6 +159,9 @@ span {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 24px;
+  height: var(--upload-area-height, 396px);
+  min-height: 280px;
+  --upload-card-min: clamp(150px, 10vw, 170px);
 }
 
 .upload-panel,
@@ -171,7 +174,10 @@ span {
 }
 
 .upload-panel {
-  min-height: 396px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
   padding: 20px;
 }
 
@@ -179,6 +185,7 @@ span {
   display: flex;
   justify-content: space-between;
   gap: 14px;
+  flex: 0 0 auto;
   margin-bottom: 16px;
 }
 
@@ -198,7 +205,8 @@ span {
   place-items: center;
   align-content: center;
   gap: 8px;
-  height: 300px;
+  flex: 1 1 auto;
+  min-height: 0;
   border: 2px dashed #cbd5e1;
   border-radius: var(--radius-lg);
   background: var(--color-surface);
@@ -217,16 +225,29 @@ span {
 
 .image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--upload-card-min), 100%), 1fr));
+  grid-auto-rows: calc(var(--upload-card-min) + 36px);
   gap: 12px;
-  max-height: 330px;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
   overflow: auto;
   padding-right: 4px;
+}
+
+.image-grid.dense-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.image-grid.dense-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 figure {
   position: relative;
   margin: 0;
+  min-width: 0;
+  height: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -235,7 +256,7 @@ figure {
 
 figure img {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  height: var(--upload-card-min);
   object-fit: cover;
   display: block;
 }
@@ -270,8 +291,60 @@ figcaption {
 
 .control-panel,
 .generation-view {
-  margin-top: 24px;
   padding: 20px;
+}
+
+.control-panel {
+  margin-top: 8px;
+}
+
+.generation-view {
+  margin-top: 24px;
+}
+
+.upload-resizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 22px;
+  margin: 10px 0 0;
+  color: var(--color-text-tertiary);
+  cursor: row-resize;
+  user-select: none;
+}
+
+.upload-resizer::before,
+.upload-resizer::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-light);
+}
+
+.upload-resizer svg {
+  flex: 0 0 auto;
+}
+
+.upload-resizer:hover,
+.upload-resizer:active {
+  color: var(--color-primary);
+}
+
+.upload-resizer:hover::before,
+.upload-resizer:hover::after,
+.upload-resizer:active::before,
+.upload-resizer:active::after {
+  background: var(--color-primary-ring);
+}
+
+body.is-upload-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
+body.is-upload-resizing * {
+  cursor: row-resize !important;
 }
 
 .generation-config-head {
@@ -295,54 +368,6 @@ figcaption {
   color: var(--color-text-tertiary);
 }
 
-.model-selector {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.model-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-height: 76px;
-  padding: 14px 16px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  text-align: left;
-  transition: all 0.15s ease;
-}
-
-.model-card:hover {
-  border-color: var(--color-text-tertiary);
-  background: var(--color-border-light);
-}
-
-.model-card.active {
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
-  box-shadow: 0 0 0 3px var(--color-primary-ring);
-}
-
-.model-card span {
-  color: var(--color-text-primary);
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.model-card small {
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-}
-
-.model-card.active span,
-.model-card.active small {
-  color: var(--color-primary);
-}
 
 .field,
 .prompt-field {
@@ -382,12 +407,19 @@ textarea {
   line-height: 1.6;
 }
 
-.param-grid {
+.generation-console {
   display: grid;
-  grid-template-columns: 180px 180px minmax(120px, 150px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 20px;
   align-items: end;
   margin-top: 16px;
+}
+
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 220px));
+  gap: 16px;
+  align-items: end;
 }
 
 .summary-card {
@@ -398,8 +430,19 @@ textarea {
   height: 72px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-primary-light);
   color: var(--color-text-secondary);
+}
+
+.generation-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.start-button {
+  width: 100%;
+  min-height: 46px;
 }
 
 .summary-card strong {
@@ -510,6 +553,13 @@ textarea {
   margin-bottom: 0;
 }
 
+.gate-error {
+  margin: -8px 0 14px;
+  text-align: center;
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
 .gate-action {
   width: 100%;
 }
@@ -540,6 +590,7 @@ textarea {
 .inline-help {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
   font-size: 12px;
@@ -558,6 +609,18 @@ textarea {
 
 .inline-help a:hover {
   text-decoration: underline;
+}
+
+.inline-help a.api-key-label-link {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.inline-help a.copyable-url {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  user-select: text;
+  overflow-wrap: anywhere;
 }
 
 .settings-form {
