@@ -119,7 +119,8 @@
     <section v-if="view === 'setup'" class="control-panel">
       <div class="prompt-field">
         <label>提示词</label>
-        <textarea v-model="prompt" placeholder="例如：把参考素材中的主体融合到目标图片中，保持目标图片的人物姿态和场景自然真实。"></textarea>
+        <textarea v-model="prompt" placeholder="例如：把参考素材中的主体融合到目标图片中，保持目标图片的人物姿态和场景自然真实。" @input="promptError = ''"></textarea>
+        <p v-if="promptError" class="form-error">{{ promptError }}</p>
       </div>
       <div class="generation-config-head">
         <div>
@@ -225,6 +226,7 @@ const runninghubApiKeyUrl = 'https://www.runninghub.cn/?inviteCode=1bcdcd69';
 const imageSetA = ref([]);
 const imageSetB = ref([]);
 const prompt = ref('');
+const promptError = ref('');
 const view = ref('setup');
 const uploadAreaHeight = ref(DEFAULT_UPLOAD_AREA_HEIGHT);
 const showSettings = ref(false);
@@ -264,7 +266,7 @@ const params = reactive({
 });
 
 const totalTasks = computed(() => (imageSetA.value.length > 0 ? imageSetA.value.length * Math.max(1, imageSetB.value.length) : 0));
-const canStart = computed(() => imageSetA.value.length > 0 && prompt.value.trim().length > 0);
+const canStart = computed(() => imageSetA.value.length > 0);
 const completedCount = computed(() => tasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
 const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
 const failedCount = computed(() => tasks.value.filter((task) => task.status === 'failed').length);
@@ -386,6 +388,10 @@ function openInviteLink() {
 }
 
 async function startGeneration() {
+  if (!prompt.value.trim()) {
+    promptError.value = '请先填写提示词';
+    return;
+  }
   if (!hasRunningHubApiKey()) {
     settingsError.value = '请先填写 RunningHub API Key';
     showSettings.value = true;

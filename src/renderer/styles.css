@@ -468,6 +468,12 @@ textarea {
   color: var(--color-text-tertiary);
 }
 
+.form-error {
+  color: var(--color-danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
