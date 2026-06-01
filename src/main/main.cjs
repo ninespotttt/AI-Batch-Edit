@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { generateRunningHubImage } = require('./runninghub.cjs');
+const { canonicalModel, generateRunningHubImage } = require('./runninghub.cjs');
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
@@ -39,7 +39,8 @@ function defaultConfig() {
 function loadConfig() {
   try {
     const raw = fs.readFileSync(configPath(), 'utf8');
-    return { ...defaultConfig(), ...JSON.parse(raw) };
+    const config = { ...defaultConfig(), ...JSON.parse(raw) };
+    return { ...config, provider: 'runninghub', runninghubModel: canonicalModel(config.runninghubModel) };
   } catch {
     return defaultConfig();
   }
@@ -47,7 +48,8 @@ function loadConfig() {
 
 function saveConfig(nextConfig) {
   fs.mkdirSync(userDataDir(), { recursive: true });
-  const merged = { ...loadConfig(), ...nextConfig };
+  const merged = { ...loadConfig(), ...nextConfig, provider: 'runninghub' };
+  merged.runninghubModel = canonicalModel(merged.runninghubModel);
   fs.writeFileSync(configPath(), JSON.stringify(merged, null, 2), 'utf8');
   return merged;
 }
@@ -123,7 +125,7 @@ async function runGenerationAdapter(task, options) {
     image1Path: task.image1Path,
     image2Path: task.image2Path,
     prompt: options.prompt || '',
-    model: config.runninghubModel || 'rhart-image-g-2',
+    model: canonicalModel(config.runninghubModel),
     aspectRatio: options.aspectRatio || '1:1',
     resolution: options.resolution || '2K'
   });

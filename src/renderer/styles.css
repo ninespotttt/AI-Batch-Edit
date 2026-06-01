@@ -274,6 +274,76 @@ figcaption {
   padding: 20px;
 }
 
+.generation-config-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.generation-config-head h2 {
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.generation-config-head p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.model-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.model-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 76px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.model-card:hover {
+  border-color: var(--color-text-tertiary);
+  background: var(--color-border-light);
+}
+
+.model-card.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+.model-card span {
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.model-card small {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.model-card.active span,
+.model-card.active small {
+  color: var(--color-primary);
+}
+
 .field,
 .prompt-field {
   display: flex;
@@ -314,26 +384,33 @@ textarea {
 
 .param-grid {
   display: grid;
-  grid-template-columns: 180px 180px 140px;
+  grid-template-columns: 180px 180px minmax(120px, 150px);
   gap: 16px;
   align-items: end;
   margin-top: 16px;
 }
 
 .summary-card {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   height: 72px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
 .summary-card strong {
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1;
   color: var(--color-primary);
+}
+
+.summary-card span {
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 .submit-row {

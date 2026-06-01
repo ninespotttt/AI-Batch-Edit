@@ -4,52 +4,46 @@ const path = require('path');
 const FormData = require('form-data');
 
 const MODEL_ALIASES = {
-  'rhart-image-g-2': 'gpt-image2',
-  'rhart-image-g-2-official': 'gpt-image2-official',
-  'rhart-image-v1': 'banana1',
-  'rhart-image-v1-official': 'banana1-official',
-  'rhart-image-n-g31-flash': 'banana2',
-  'rhart-image-n-g31-flash-official': 'banana2-official',
-  'rhart-image-n-pro': 'bananapro',
-  'rhart-image-n-pro-official': 'bananapro-official',
-  'rhart-image-n-pro-official-ultra': 'bananapro-ultra'
+  'rhart-image-g-2': 'rhart-image-g-2',
+  'gpt2': 'rhart-image-g-2',
+  'gpt-image2': 'rhart-image-g-2',
+  'rhart-image-g-2-official': 'rhart-image-g-2',
+  'gpt-image2-official': 'rhart-image-g-2',
+  'rhart-image-n-g31-flash': 'rhart-image-n-g31-flash',
+  'banana2': 'rhart-image-n-g31-flash',
+  'rhart-image-n-g31-flash-official': 'rhart-image-n-g31-flash',
+  'banana2-official': 'rhart-image-n-g31-flash',
+  'rhart-image-n-pro': 'rhart-image-n-pro',
+  'banana pro': 'rhart-image-n-pro',
+  'bananapro': 'rhart-image-n-pro',
+  'rhart-image-n-pro-official': 'rhart-image-n-pro',
+  'bananapro-official': 'rhart-image-n-pro',
+  'rhart-image-n-pro-official-ultra': 'rhart-image-n-pro',
+  'bananapro-ultra': 'rhart-image-n-pro'
 };
 
-const V1_MODELS = new Set(['rhart-image-v1', 'rhart-image-v1-official']);
-const QUALITY_MODELS = new Set(['rhart-image-g-2-official']);
+const LOW_COST_MODELS = new Set(['rhart-image-g-2', 'rhart-image-n-g31-flash', 'rhart-image-n-pro']);
 
 function canonicalModel(model) {
   const raw = String(model || '').trim();
   const normalized = raw.toLowerCase();
-  for (const [id, alias] of Object.entries(MODEL_ALIASES)) {
-    if (normalized === id.toLowerCase() || normalized === alias.toLowerCase()) return id;
-  }
-  return raw || 'rhart-image-g-2';
+  const mapped = MODEL_ALIASES[normalized] || raw;
+  return LOW_COST_MODELS.has(mapped) ? mapped : 'rhart-image-g-2';
 }
 
 function modelSpec(model) {
   const base = canonicalModel(model);
-  if (base === 'rhart-image-g-2' || base === 'rhart-image-g-2-official') {
+  if (base === 'rhart-image-g-2') {
     return {
       base,
       endpoint: 'image-to-image',
       aspectRatios: ['3:2', '1:1', '2:3', '5:4', '4:5', '16:9', '9:16', '21:9', '3:4', '4:3', '9:21'],
       fallbackAspect: '1:1',
       resolutions: ['1k', '2k', '4k'],
-      quality: QUALITY_MODELS.has(base)
-    };
-  }
-  if (V1_MODELS.has(base)) {
-    return {
-      base,
-      endpoint: 'edit',
-      aspectRatios: ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'],
-      fallbackAspect: 'auto',
-      resolutions: [],
       quality: false
     };
   }
-  if (base === 'rhart-image-n-g31-flash' || base === 'rhart-image-n-g31-flash-official') {
+  if (base === 'rhart-image-n-g31-flash') {
     return {
       base,
       endpoint: 'image-to-image',
@@ -59,7 +53,7 @@ function modelSpec(model) {
       quality: false
     };
   }
-  if (base === 'rhart-image-n-pro' || base === 'rhart-image-n-pro-official') {
+  if (base === 'rhart-image-n-pro') {
     return {
       base,
       endpoint: 'image-to-image',
@@ -69,14 +63,7 @@ function modelSpec(model) {
       quality: false
     };
   }
-  return {
-    base: 'rhart-image-n-pro-official-ultra',
-    endpoint: 'edit-ultra',
-    aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
-    fallbackAspect: '1:1',
-    resolutions: ['4k', '8k'],
-    quality: false
-  };
+  return modelSpec('rhart-image-g-2');
 }
 
 function firstNestedValue(value, keys, visited = new Set()) {

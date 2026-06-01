@@ -71,6 +71,24 @@
         <label>提示词</label>
         <textarea v-model="prompt" placeholder="例如：把图1的主体融合到图2中，保持图2人物姿态和场景自然真实。"></textarea>
       </div>
+      <div class="generation-config-head">
+        <div>
+          <h2>生成配置</h2>
+          <p>选择模型和输出规格，批量任务会按图1 x 图2自动生成。</p>
+        </div>
+      </div>
+      <div class="model-selector">
+        <button
+          v-for="model in modelOptions"
+          :key="model.value"
+          class="model-card"
+          :class="{ active: config.runninghubModel === model.value }"
+          @click="selectModel(model.value)"
+        >
+          <span>{{ model.label }}</span>
+          <small>{{ model.description }}</small>
+        </button>
+      </div>
       <div class="param-grid">
         <div class="field">
           <label>比例</label>
@@ -142,6 +160,14 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ExternalLink, FolderOpen, Images, Play, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
 import UploadPanel from './components/UploadPanel.vue';
 
+const MODEL_OPTIONS = [
+  { label: 'GPT2', value: 'rhart-image-g-2', description: '通用图像编辑' },
+  { label: 'Banana2', value: 'rhart-image-n-g31-flash', description: '快速图像编辑' },
+  { label: 'Banana Pro', value: 'rhart-image-n-pro', description: '增强图像编辑' }
+];
+
+const LOW_COST_MODELS = new Set(MODEL_OPTIONS.map((model) => model.value));
+
 const imageSetA = ref([]);
 const imageSetB = ref([]);
 const prompt = ref('');
@@ -154,6 +180,7 @@ const activeCount = ref(0);
 const launchCount = ref(0);
 const lastLaunchAt = ref(0);
 let queueTimer = null;
+const modelOptions = MODEL_OPTIONS;
 
 const config = reactive({
   outputRoot: '',
@@ -183,6 +210,7 @@ const statusText = computed(() => `${completedCount.value}/${tasks.value.length}
 onMounted(async () => {
   Object.assign(config, await window.batchApi.loadConfig());
   config.provider = 'runninghub';
+  config.runninghubModel = normalizeModel(config.runninghubModel);
   config.concurrency = config.concurrency && config.concurrency !== 20 ? config.concurrency : 50;
   config.simulateFailures = false;
   params.aspectRatio = config.aspectRatio || 'auto';
@@ -191,11 +219,16 @@ onMounted(async () => {
 
 async function saveConfig() {
   config.concurrency = clampConcurrency(config.concurrency);
+  config.runninghubModel = normalizeModel(config.runninghubModel);
   await window.batchApi.saveConfig({
     ...config,
     aspectRatio: params.aspectRatio,
     resolution: params.resolution
   });
+}
+
+function selectModel(model) {
+  config.runninghubModel = normalizeModel(model);
 }
 
 async function saveConfigAndClose() {
@@ -413,6 +446,10 @@ function toManifestTask(task) {
 function clampConcurrency(value) {
   const number = Number(value) || 20;
   return Math.min(100, Math.max(1, Math.floor(number)));
+}
+
+function normalizeModel(model) {
+  return LOW_COST_MODELS.has(model) ? model : 'rhart-image-g-2';
 }
 
 function stateLabel(status) {
