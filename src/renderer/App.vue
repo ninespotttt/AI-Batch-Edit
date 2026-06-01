@@ -9,10 +9,42 @@
         </div>
       </div>
       <div class="top-actions">
+        <button class="ghost" @click="showWechat = true"><MessageCircle :size="16" />微信联系</button>
         <button class="ghost" @click="openOutputRoot"><FolderOpen :size="16" />打开当前项目</button>
         <button class="ghost" @click="showSettings = true"><Settings :size="16" />API设置</button>
       </div>
     </header>
+
+    <div v-if="showOnboarding" class="modal-backdrop onboarding-backdrop">
+      <section class="gate-modal" role="dialog" aria-modal="true" aria-label="关注公众号">
+        <div class="gate-copy">
+          <img src="./assets/logo.jpg" alt="支点引入" />
+          <h2>关注公众号后使用</h2>
+          <p>首次在本设备打开，需要扫码关注公众号后进入操作界面。</p>
+        </div>
+        <div class="qr-placeholder">
+          <QrCode :size="96" />
+          <span>公众号二维码位置</span>
+        </div>
+        <button class="primary gate-action" @click="completeOnboarding"><CheckCircle2 :size="16" />已扫码关注，进入使用</button>
+      </section>
+    </div>
+
+    <div v-if="showWechat" class="modal-backdrop" @click.self="showWechat = false">
+      <section class="wechat-modal" role="dialog" aria-modal="true" aria-label="微信联系">
+        <div class="modal-header">
+          <div>
+            <h2>微信联系</h2>
+            <p>扫码添加微信，获取使用支持和后续服务信息。</p>
+          </div>
+          <button class="icon-btn close-btn" @click="showWechat = false" title="关闭"><X :size="18" /></button>
+        </div>
+        <div class="qr-placeholder wechat-qr">
+          <QrCode :size="108" />
+          <span>微信二维码位置</span>
+        </div>
+      </section>
+    </div>
 
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
       <section class="settings-modal" role="dialog" aria-modal="true" aria-label="API设置">
@@ -157,7 +189,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ExternalLink, FolderOpen, Images, Play, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
+import { CheckCircle2, ExternalLink, FolderOpen, Images, MessageCircle, Play, QrCode, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
 import UploadPanel from './components/UploadPanel.vue';
 
 const MODEL_OPTIONS = [
@@ -173,6 +205,8 @@ const imageSetB = ref([]);
 const prompt = ref('');
 const view = ref('setup');
 const showSettings = ref(false);
+const showWechat = ref(false);
+const showOnboarding = ref(false);
 const tasks = ref([]);
 const batchDir = ref('');
 const stopped = ref(false);
@@ -192,7 +226,8 @@ const config = reactive({
   openaiApiKey: '',
   openaiModel: '',
   concurrency: 50,
-  simulateFailures: false
+  simulateFailures: false,
+  onboardingCompleted: false
 });
 
 const params = reactive({
@@ -215,6 +250,7 @@ onMounted(async () => {
   config.simulateFailures = false;
   params.aspectRatio = config.aspectRatio || 'auto';
   params.resolution = ['2K', '4K'].includes(config.resolution) ? config.resolution : '2K';
+  showOnboarding.value = !config.onboardingCompleted;
 });
 
 async function saveConfig() {
@@ -229,6 +265,12 @@ async function saveConfig() {
 
 function selectModel(model) {
   config.runninghubModel = normalizeModel(model);
+}
+
+async function completeOnboarding() {
+  config.onboardingCompleted = true;
+  await saveConfig();
+  showOnboarding.value = false;
 }
 
 async function saveConfigAndClose() {

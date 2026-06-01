@@ -32,7 +32,8 @@ function defaultConfig() {
     aspectRatio: 'auto',
     resolution: '2K',
     concurrency: 50,
-    simulateFailures: false
+    simulateFailures: false,
+    onboardingCompleted: false
   };
 }
 

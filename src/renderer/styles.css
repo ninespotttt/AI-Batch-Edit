@@ -446,6 +446,74 @@ textarea {
   padding: 24px 26px 22px;
 }
 
+.gate-modal,
+.wechat-modal {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 18px 56px rgba(15, 23, 42, 0.18);
+  padding: 26px;
+}
+
+.onboarding-backdrop {
+  background: rgba(245, 245, 245, 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.gate-copy {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.gate-copy img {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  margin-bottom: 4px;
+}
+
+.gate-copy h2 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.gate-copy p {
+  max-width: 300px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.qr-placeholder {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  width: 190px;
+  height: 190px;
+  margin: 22px auto;
+  border: 1px dashed #d7d7d7;
+  border-radius: var(--radius-lg);
+  background: #fafafa;
+  color: var(--color-text-tertiary);
+}
+
+.qr-placeholder span {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.wechat-qr {
+  margin-bottom: 0;
+}
+
+.gate-action {
+  width: 100%;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
