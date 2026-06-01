@@ -58,10 +58,11 @@
         </div>
 
         <div class="settings-form">
+          <p v-if="settingsError" class="settings-error">{{ settingsError }}</p>
           <div class="setting-section">
             <div class="field">
               <label>API Key</label>
-              <input v-model="config.runninghubApiKey" type="password" placeholder="粘贴 RunningHub API Key" />
+              <input v-model="config.runninghubApiKey" type="password" placeholder="粘贴 RunningHub API Key" @input="settingsError = ''" />
             </div>
             <div class="inline-help">
               <a class="api-key-label-link" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink"><ExternalLink :size="14" />申请 API Key</a>
@@ -228,6 +229,7 @@ const uploadAreaHeight = ref(DEFAULT_UPLOAD_AREA_HEIGHT);
 const showSettings = ref(false);
 const showWechat = ref(false);
 const showOnboarding = ref(false);
+const settingsError = ref('');
 const onboardingShownAt = ref(0);
 const onboardingError = ref('');
 const tasks = ref([]);
@@ -333,8 +335,13 @@ async function completeOnboarding() {
 }
 
 async function saveConfigAndClose() {
+  if (!hasRunningHubApiKey()) {
+    settingsError.value = '请先填写 RunningHub API Key';
+    return;
+  }
   await saveConfig();
   showSettings.value = false;
+  settingsError.value = '';
 }
 
 async function selectOutputRoot() {
@@ -378,6 +385,11 @@ function openInviteLink() {
 }
 
 async function startGeneration() {
+  if (!hasRunningHubApiKey()) {
+    settingsError.value = '请先填写 RunningHub API Key';
+    showSettings.value = true;
+    return;
+  }
   await saveConfig();
   stopped.value = false;
   activeCount.value = 0;
@@ -551,6 +563,10 @@ function clampConcurrency(value) {
 
 function normalizeModel(model) {
   return LOW_COST_MODELS.has(model) ? model : 'rhart-image-g-2';
+}
+
+function hasRunningHubApiKey() {
+  return config.runninghubApiKey.trim().length > 0;
 }
 
 function stateLabel(status) {
