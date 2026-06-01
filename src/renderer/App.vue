@@ -476,7 +476,7 @@ async function runTask(task) {
   try {
     const result = await window.batchApi.runTask({
       batchDir: batchDir.value,
-      task,
+      task: toPlainTask(task),
       options: {
         provider: config.provider,
         prompt: prompt.value,
@@ -561,6 +561,17 @@ function toManifestTask(task) {
     outputPath: task.outputPath,
     startedAt: task.startedAt,
     finishedAt: task.finishedAt
+  };
+}
+
+function toPlainTask(task) {
+  return {
+    id: task.id,
+    index: task.index,
+    image1Index: task.image1Index,
+    image2Index: task.image2Index,
+    image1Path: task.image1Path,
+    image2Path: task.image2Path
   };
 }
 
