@@ -5,7 +5,7 @@
         <img src="./assets/logo.jpg" alt="支点引入" />
         <div>
           <h1>支点引入-万能AI批量编辑器</h1>
-          <p>图1 x 图2，全组合批量生成</p>
+          <p>参考素材 x 目标图片，全组合批量生成</p>
         </div>
       </div>
       <div class="top-actions">
@@ -96,8 +96,8 @@
     </div>
 
     <section v-if="view === 'setup'" class="setup-grid" :style="{ '--upload-area-height': `${uploadAreaHeight}px` }">
-      <UploadPanel title="图1" :images="imageSetA" @select-folder="selectFolder('A')" @select-files="selectFiles('A')" @drop-paths="addDropped('A', $event)" @remove="removeImage('A', $event)" @clear="imageSetA = []" />
-      <UploadPanel title="图2" :images="imageSetB" @select-folder="selectFolder('B')" @select-files="selectFiles('B')" @drop-paths="addDropped('B', $event)" @remove="removeImage('B', $event)" @clear="imageSetB = []" />
+      <UploadPanel title="参考素材" :images="imageSetA" @select-folder="selectFolder('A')" @select-files="selectFiles('A')" @drop-paths="addDropped('A', $event)" @remove="removeImage('A', $event)" @clear="imageSetA = []" />
+      <UploadPanel title="目标图片" :images="imageSetB" @select-folder="selectFolder('B')" @select-files="selectFiles('B')" @drop-paths="addDropped('B', $event)" @remove="removeImage('B', $event)" @clear="imageSetB = []" />
     </section>
 
     <div
@@ -118,12 +118,12 @@
     <section v-if="view === 'setup'" class="control-panel">
       <div class="prompt-field">
         <label>提示词</label>
-        <textarea v-model="prompt" placeholder="例如：把图1的主体融合到图2中，保持图2人物姿态和场景自然真实。"></textarea>
+        <textarea v-model="prompt" placeholder="例如：把参考素材中的主体融合到目标图片中，保持目标图片的人物姿态和场景自然真实。"></textarea>
       </div>
       <div class="generation-config-head">
         <div>
           <h2>生成配置</h2>
-          <p>选择模型和输出规格，批量任务会按图1 x 图2自动生成。</p>
+          <p>选择模型和输出规格，批量任务会按参考素材 x 目标图片自动生成。</p>
         </div>
       </div>
       <div class="generation-console">
@@ -184,8 +184,8 @@
       <div class="cards-grid">
         <article v-for="task in tasks" :key="task.id" class="task-card" :class="task.status">
           <div class="thumb-row">
-            <img :src="task.image1Preview" alt="图1" />
-            <img :src="task.image2Preview" alt="图2" />
+            <img :src="task.image1Preview" alt="参考素材" />
+            <img :src="task.image2Preview" alt="目标图片" />
           </div>
           <div v-if="task.outputUrl" class="result-box">
             <img :src="task.outputUrl" alt="生成结果" />
