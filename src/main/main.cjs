@@ -87,10 +87,16 @@ function mapImage(filePath, index) {
   };
 }
 
-function timestamp() {
+function dateStamp() {
   const date = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function timeStamp() {
+  const date = new Date();
+  const pad = (n, size = 2) => String(n).padStart(size, '0');
+  return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}`;
 }
 
 function writeManifest(batchDir, manifest) {
@@ -209,7 +215,7 @@ ipcMain.handle('output:selectRoot', async () => {
 ipcMain.handle('output:createBatch', (_event, payload) => {
   const config = loadConfig();
   const outputRoot = payload?.outputRoot || config.outputRoot || defaultConfig().outputRoot;
-  const batchDir = path.join(outputRoot, timestamp());
+  const batchDir = path.join(outputRoot, dateStamp());
   fs.mkdirSync(batchDir, { recursive: true });
   const manifest = {
     createdAt: new Date().toISOString(),
@@ -232,7 +238,7 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
   const ext = '.png';
   const sourceName = task.image2Path || task.image1Path;
   const pairPart = task.image2Path ? `目标-${task.image2Index + 1}` : '单图';
-  const outputName = `${String(task.index + 1).padStart(4, '0')}_参考-${task.image1Index + 1}_${pairPart}_${safeFilePart(path.basename(sourceName, path.extname(sourceName)))}${ext}`;
+  const outputName = `${timeStamp()}_${String(task.index + 1).padStart(4, '0')}_参考-${task.image1Index + 1}_${pairPart}_${safeFilePart(path.basename(sourceName, path.extname(sourceName)))}${ext}`;
   const outputPath = path.join(batchDir, outputName);
   fs.writeFileSync(outputPath, buffer);
   return {
