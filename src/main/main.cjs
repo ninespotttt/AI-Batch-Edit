@@ -1,0 +1,260 @@
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const { generateRunningHubImage } = require('./runninghub.cjs');
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+let mainWindow;
+
+function appRoot() {
+  return app.isPackaged ? path.dirname(app.getPath('exe')) : process.cwd();
+}
+
+function userDataDir() {
+  return app.getPath('userData');
+}
+
+function configPath() {
+  return path.join(userDataDir(), 'config.json');
+}
+
+function defaultConfig() {
+  return {
+    outputRoot: path.join(appRoot(), 'outputs'),
+    provider: 'runninghub',
+    runninghubApiKey: '',
+    runninghubBaseUrl: 'https://www.runninghub.cn',
+    runninghubModel: 'rhart-image-g-2',
+    openaiBaseUrl: '',
+    openaiApiKey: '',
+    openaiModel: '',
+    aspectRatio: 'auto',
+    resolution: '2K',
+    concurrency: 50,
+    simulateFailures: false
+  };
+}
+
+function loadConfig() {
+  try {
+    const raw = fs.readFileSync(configPath(), 'utf8');
+    return { ...defaultConfig(), ...JSON.parse(raw) };
+  } catch {
+    return defaultConfig();
+  }
+}
+
+function saveConfig(nextConfig) {
+  fs.mkdirSync(userDataDir(), { recursive: true });
+  const merged = { ...loadConfig(), ...nextConfig };
+  fs.writeFileSync(configPath(), JSON.stringify(merged, null, 2), 'utf8');
+  return merged;
+}
+
+function toFileUrl(filePath) {
+  return `file:///${filePath.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+}
+
+function isImage(filePath) {
+  return IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function walkImages(entryPath, output = []) {
+  if (!entryPath || !fs.existsSync(entryPath)) return output;
+  const stat = fs.statSync(entryPath);
+  if (stat.isFile() && isImage(entryPath)) {
+    output.push(entryPath);
+    return output;
+  }
+  if (!stat.isDirectory()) return output;
+  const entries = fs.readdirSync(entryPath, { withFileTypes: true });
+  for (const entry of entries) {
+    walkImages(path.join(entryPath, entry.name), output);
+  }
+  return output;
+}
+
+function mapImage(filePath, index) {
+  return {
+    id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+    path: filePath,
+    name: path.basename(filePath),
+    previewUrl: toFileUrl(filePath)
+  };
+}
+
+function timestamp() {
+  const date = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+
+function writeManifest(batchDir, manifest) {
+  fs.writeFileSync(path.join(batchDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+}
+
+function safeFilePart(value) {
+  return String(value || '')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 80);
+}
+
+async function runMockAdapter(task, options) {
+  const delay = 1200 + Math.floor(Math.random() * 1800);
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  const shouldFail = options.simulateFailures && Math.random() < 0.12;
+  if (shouldFail || /模拟失败|test-fail|fail/i.test(options.prompt || '')) {
+    throw new Error('模拟生成失败，用于验证重新生成流程');
+  }
+  return task.image2Path;
+}
+
+async function runGenerationAdapter(task, options) {
+  if (options.provider === 'mock') {
+    const sourcePath = await runMockAdapter(task, options);
+    return fs.readFileSync(sourcePath);
+  }
+  const config = loadConfig();
+  return generateRunningHubImage({
+    apiKey: config.runninghubApiKey,
+    baseUrl: config.runninghubBaseUrl,
+    image1Path: task.image1Path,
+    image2Path: task.image2Path,
+    prompt: options.prompt || '',
+    model: config.runninghubModel || 'rhart-image-g-2',
+    aspectRatio: options.aspectRatio || '1:1',
+    resolution: options.resolution || '2K'
+  });
+}
+
+async function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1320,
+    height: 860,
+    minWidth: 1120,
+    minHeight: 740,
+    title: '支点引入-万能AI批量编辑器',
+    icon: path.join(app.getAppPath(), 'build', 'icon.ico'),
+    backgroundColor: '#f6f7fb',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  mainWindow.setMenuBarVisibility(false);
+
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    await mainWindow.loadURL(devUrl);
+  } else {
+    await mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
+  }
+}
+
+app.whenReady().then(createWindow);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.handle('config:load', () => loadConfig());
+
+ipcMain.handle('config:save', (_event, config) => saveConfig(config || {}));
+
+ipcMain.handle('images:selectFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择图片文件夹',
+    properties: ['openDirectory']
+  });
+  if (result.canceled || !result.filePaths[0]) return [];
+  return walkImages(result.filePaths[0]).map(mapImage);
+});
+
+ipcMain.handle('images:selectFiles', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择图片',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp'] }
+    ]
+  });
+  if (result.canceled) return [];
+  return result.filePaths.filter(isImage).map(mapImage);
+});
+
+ipcMain.handle('images:fromPaths', (_event, paths) => {
+  const imagePaths = [];
+  for (const entryPath of paths || []) {
+    walkImages(entryPath, imagePaths);
+  }
+  return imagePaths.map(mapImage);
+});
+
+ipcMain.handle('output:selectRoot', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择输出目录',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('output:createBatch', (_event, payload) => {
+  const config = loadConfig();
+  const outputRoot = payload?.outputRoot || config.outputRoot || defaultConfig().outputRoot;
+  const batchDir = path.join(outputRoot, timestamp());
+  fs.mkdirSync(batchDir, { recursive: true });
+  const manifest = {
+    createdAt: new Date().toISOString(),
+    prompt: payload?.prompt || '',
+    params: payload?.params || {},
+    tasks: payload?.tasks || []
+  };
+  writeManifest(batchDir, manifest);
+  return { batchDir, manifestPath: path.join(batchDir, 'manifest.json') };
+});
+
+ipcMain.handle('generation:runTask', async (_event, payload) => {
+  const { task, batchDir, options } = payload || {};
+  if (!task || !batchDir) throw new Error('任务参数不完整');
+  if (!fs.existsSync(task.image1Path) || !fs.existsSync(task.image2Path)) {
+    throw new Error('输入图片不存在');
+  }
+
+  const buffer = await runGenerationAdapter(task, options || {});
+  const ext = '.png';
+  const outputName = `${String(task.index + 1).padStart(4, '0')}_图1-${task.image1Index + 1}_图2-${task.image2Index + 1}_${safeFilePart(path.basename(task.image2Path, path.extname(task.image2Path)))}${ext}`;
+  const outputPath = path.join(batchDir, outputName);
+  fs.writeFileSync(outputPath, buffer);
+  return {
+    outputPath,
+    outputUrl: toFileUrl(outputPath)
+  };
+});
+
+ipcMain.handle('manifest:write', (_event, payload) => {
+  const { batchDir, manifest } = payload || {};
+  if (!batchDir || !manifest) throw new Error('manifest 参数不完整');
+  writeManifest(batchDir, manifest);
+  return true;
+});
+
+ipcMain.handle('shell:openPath', async (_event, targetPath) => {
+  const finalPath = targetPath || loadConfig().outputRoot || defaultConfig().outputRoot;
+  fs.mkdirSync(finalPath, { recursive: true });
+  const error = await shell.openPath(finalPath);
+  if (error) throw new Error(error);
+  return true;
+});
+
+ipcMain.handle('shell:openExternal', async (_event, url) => {
+  if (!/^https:\/\/www\.runninghub\.cn\//.test(String(url || ''))) {
+    throw new Error('不允许打开未知链接');
+  }
+  await shell.openExternal(url);
+  return true;
+});
