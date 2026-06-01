@@ -212,7 +212,7 @@ const MIN_UPLOAD_AREA_HEIGHT = 280;
 const MAX_UPLOAD_AREA_HEIGHT = 760;
 
 const MODEL_OPTIONS = [
-  { label: 'GPT2', value: 'rhart-image-g-2' },
+  { label: 'gpt-image2', value: 'rhart-image-g-2' },
   { label: 'Banana2', value: 'rhart-image-n-g31-flash' },
   { label: 'Banana Pro', value: 'rhart-image-n-pro' }
 ];
