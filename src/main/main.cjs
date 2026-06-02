@@ -48,6 +48,7 @@ function loadConfig() {
   try {
     const raw = fs.readFileSync(configPath(), 'utf8');
     const config = { ...defaultConfig(), ...JSON.parse(raw) };
+    config.dismissedNoticeIds = Array.isArray(config.dismissedNoticeIds) ? config.dismissedNoticeIds : [];
     return { ...config, provider: 'runninghub', runninghubModel: canonicalModel(config.runninghubModel) };
   } catch {
     return defaultConfig();
@@ -92,9 +93,10 @@ function fetchJson(url, timeoutMs = 5000) {
 
 function normalizeNotice(raw) {
   if (!raw || raw.enabled === false || !raw.id || !raw.title || !raw.message) return null;
+  const type = String(raw.type || 'info').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'info';
   return {
     id: String(raw.id).slice(0, 120),
-    type: String(raw.type || 'info').slice(0, 40),
+    type,
     title: String(raw.title).slice(0, 80),
     message: String(raw.message).slice(0, 240),
     buttonText: raw.buttonText ? String(raw.buttonText).slice(0, 24) : '',

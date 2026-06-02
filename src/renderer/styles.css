@@ -655,58 +655,36 @@ textarea {
 }
 
 .donate-modal {
-  width: 390px;
+  width: 408px;
 }
 
 .alipay-card {
   display: grid;
   justify-items: center;
-  gap: 14px;
-  padding: 18px;
-  border: 1px solid #cfe8ff;
-  border-radius: var(--radius-md);
-  background: #f2f9ff;
-}
-
-.alipay-card-head {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  color: #1677ff;
-}
-
-.alipay-card-head span {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.alipay-card-head strong {
-  color: var(--color-text-primary);
-  font-size: 17px;
+  gap: 0;
+  padding: 24px 20px;
+  border: 1px solid #d7e7ff;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
 }
 
 .donate-qr {
   display: grid;
   place-items: center;
-  width: 176px;
-  height: 176px;
+  width: 220px;
+  height: 220px;
+  padding: 12px;
   border: 1px solid #d8ecff;
-  border-radius: var(--radius-md);
+  border-radius: 20px;
   background: #ffffff;
-  color: #1677ff;
+  box-shadow: 0 10px 28px rgba(22, 119, 255, 0.08);
 }
 
 .donate-qr img {
-  width: 160px;
-  height: 160px;
+  width: 100%;
+  height: 100%;
   display: block;
   object-fit: contain;
-}
-
-.alipay-card p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-secondary);
 }
 
 .gate-error {

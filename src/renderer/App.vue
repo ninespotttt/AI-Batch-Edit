@@ -2,17 +2,32 @@
   <main class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="./assets/logo.jpg" alt="支点引入" />
-        <div>
-          <h1>支点引入-万能AI批量编辑器</h1>
-          <p>参考素材 x 目标图片，全组合批量生成</p>
+        <img src="./assets/logo.jpg" alt="万能AI批量编辑器" />
+        <div class="brand-copy">
+          <p class="eyebrow">万能AI批量编辑器</p>
+          <h1>万能AI批量编辑器</h1>
+          <p>把操作台、生成队列和设置拆开，切成更顺手的三个工作区。</p>
         </div>
       </div>
+
+      <nav class="top-nav" aria-label="主导航">
+        <button
+          v-for="item in navItems"
+          :key="item.key"
+          class="tab-btn"
+          :class="{ active: activeTab === item.key }"
+          @click="activeTab = item.key"
+        >
+          <component :is="item.icon" :size="16" />
+          <span>{{ item.label }}</span>
+        </button>
+      </nav>
+
       <div class="top-actions">
-        <button class="ghost milk-tea-trigger" @click="showDonate = true"><Coffee :size="16" />请作者喝奶茶</button>
+        <button class="ghost" @click="showDonate = true"><Coffee :size="16" />支持一下</button>
         <button class="ghost" @click="showWechat = true"><MessageCircle :size="16" />微信联系</button>
-        <button class="ghost" @click="openOutputRoot"><FolderOpen :size="16" />打开当前项目</button>
-        <button class="ghost" @click="showSettings = true"><Settings :size="16" />API设置</button>
+        <button class="ghost" @click="openOutputRoot"><FolderOpen :size="16" />打开输出</button>
+        <button class="ghost" @click="activeTab = 'settings'"><Settings :size="16" />前往设置</button>
       </div>
     </header>
 
@@ -32,10 +47,313 @@
       </div>
     </section>
 
+    <section v-if="activeTab === 'workspace'" class="tab-section tab-workspace">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">01 / 操作台</p>
+          <h2>先放素材，再写提示词，最后开始批量生成。</h2>
+        </div>
+        <div class="section-metrics">
+          <div class="metric-card">
+            <strong>{{ totalTasks }}</strong>
+            <span>总任务数</span>
+          </div>
+          <div class="metric-card">
+            <strong>{{ config.concurrency }}</strong>
+            <span>并发上限</span>
+          </div>
+          <div class="metric-card">
+            <strong>{{ completedCount }}</strong>
+            <span>已完成</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-grid">
+        <section class="workspace-column">
+          <UploadPanel
+            title="参考素材"
+            :images="imageSetA"
+            @select-folder="selectFolder('A')"
+            @select-files="selectFiles('A')"
+            @drop-paths="addDropped('A', $event)"
+            @remove="removeImage('A', $event)"
+            @clear="imageSetA = []"
+          />
+
+          <UploadPanel
+            title="目标图片"
+            :images="imageSetB"
+            @select-folder="selectFolder('B')"
+            @select-files="selectFiles('B')"
+            @drop-paths="addDropped('B', $event)"
+            @remove="removeImage('B', $event)"
+            @clear="imageSetB = []"
+          />
+        </section>
+
+        <aside class="workspace-column">
+          <section class="panel prompt-panel">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">任务说明</p>
+                <h3>提示词</h3>
+              </div>
+            </div>
+            <div class="prompt-field">
+              <textarea
+                v-model="prompt"
+                placeholder="例如：把参考素材中的主体融合到目标图片中，保持目标图片的人物姿态和场景自然真实。"
+                @input="promptError = ''"
+              ></textarea>
+              <p v-if="promptError" class="form-error">{{ promptError }}</p>
+            </div>
+          </section>
+
+          <section class="panel launch-panel">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">生成配置</p>
+                <h3>模型与输出规格</h3>
+              </div>
+            </div>
+
+            <div class="param-grid">
+              <div class="field">
+                <label>AI 模型</label>
+                <select v-model="config.runninghubModel">
+                  <option v-for="model in modelOptions" :key="model.value" :value="model.value">{{ model.label }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>比例</label>
+                <select v-model="params.aspectRatio">
+                  <option value="auto">auto</option>
+                  <option value="1:1">1:1</option>
+                  <option value="2:3">2:3</option>
+                  <option value="3:4">3:4</option>
+                  <option value="4:3">4:3</option>
+                  <option value="3:2">3:2</option>
+                  <option value="9:16">9:16</option>
+                  <option value="16:9">16:9</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>尺寸</label>
+                <select v-model="params.resolution">
+                  <option value="2K">2K</option>
+                  <option value="4K">4K</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="launch-row">
+              <div class="launch-summary">
+                <strong>{{ totalTasks }}</strong>
+                <span>个任务</span>
+              </div>
+              <button class="primary launch-button" :disabled="!canStart" @click="startGeneration">
+                <Play :size="16" />
+                开始生成
+              </button>
+            </div>
+
+            <p class="hint">当前并发 {{ config.concurrency }}，生成结果会自动写入输出目录。</p>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'generation'" class="tab-section">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">02 / 生成区域</p>
+          <h2>队列、进度和历史记录都放在这里。</h2>
+          <p class="section-copy">{{ statusText }}</p>
+        </div>
+        <div class="top-actions">
+          <button class="ghost" @click="retryFailed"><RotateCcw :size="16" />重试失败项</button>
+          <button class="ghost" @click="stopQueue" :disabled="stopped"><Square :size="16" />停止队列</button>
+          <button class="ghost" @click="openBatchDir"><FolderOpen :size="16" />打开输出目录</button>
+          <button class="ghost" @click="activeTab = 'workspace'"><Images :size="16" />回到操作台</button>
+        </div>
+      </div>
+
+      <div class="generation-summary-strip">
+        <div class="summary-chip">
+          <span>已完成</span>
+          <strong>{{ completedCount }}</strong>
+        </div>
+        <div class="summary-chip success">
+          <span>成功</span>
+          <strong>{{ successCount }}</strong>
+        </div>
+        <div class="summary-chip danger">
+          <span>失败</span>
+          <strong>{{ failedCount }}</strong>
+        </div>
+        <div class="summary-chip">
+          <span>当前批次</span>
+          <strong>{{ batchDir ? '已创建' : '未开始' }}</strong>
+        </div>
+      </div>
+
+      <div class="cards-grid">
+        <article v-for="task in tasks" :key="task.id" class="task-card" :class="task.status">
+          <div class="thumb-row" :class="{ single: !task.image2Preview }">
+            <img :src="task.image1Preview" alt="参考素材" />
+            <img v-if="task.image2Preview" :src="task.image2Preview" alt="目标图片" />
+            <div v-else class="empty-target">单图生成</div>
+          </div>
+          <div v-if="task.outputUrl" class="result-box">
+            <img :src="task.outputUrl" alt="生成结果" />
+          </div>
+          <div v-else class="state-box">{{ stateLabel(task.status) }}</div>
+          <div class="task-meta">
+            <strong>#{{ task.index + 1 }}</strong>
+            <span>{{ task.statusMessage }}</span>
+          </div>
+          <button v-if="task.status === 'failed'" class="retry-btn" @click="retryTask(task)">
+            <RotateCcw :size="16" />重新生成
+          </button>
+        </article>
+      </div>
+
+      <section class="history-panel">
+        <div class="history-header">
+          <div>
+            <p class="section-kicker">历史记录</p>
+            <h2>最近生成</h2>
+            <p>这里能快速回看最近的生成结果，也可以直接打开所在目录。</p>
+          </div>
+          <button class="ghost" @click="loadHistory"><RotateCcw :size="16" />刷新</button>
+        </div>
+
+        <div v-if="historyItems.length > 0" class="history-grid">
+          <article v-for="item in historyItems" :key="item.path" class="history-card">
+            <img :src="item.url" :alt="item.name" />
+            <div class="history-card-meta">
+              <strong :title="item.name">{{ item.name }}</strong>
+              <span>{{ item.day }}</span>
+            </div>
+            <button class="ghost history-open" @click="openHistoryDir(item.dir)">
+              <FolderOpen :size="14" />打开目录
+            </button>
+          </article>
+        </div>
+        <div v-else class="history-empty">暂无历史图片</div>
+      </section>
+    </section>
+
+    <section v-if="activeTab === 'settings'" class="tab-section">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">03 / 设置区域</p>
+          <h2>把模型、API、输出路径和并发统一收在这里。</h2>
+        </div>
+        <div class="top-actions">
+          <button class="ghost" @click="openInviteLink"><ExternalLink :size="16" />申请 Key</button>
+          <button class="primary" @click="saveSettings"><Save :size="16" />保存设置</button>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <section class="panel settings-panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">服务配置</p>
+              <h3>RunningHub</h3>
+            </div>
+          </div>
+          <p v-if="settingsError" class="settings-error">{{ settingsError }}</p>
+
+          <div class="setting-section">
+            <div class="inline-help api-key-link-row">
+              <a class="api-key-label-link" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink">
+                <ExternalLink :size="14" />申请 API Key
+              </a>
+              <a class="copyable-url" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink">{{ runninghubApiKeyUrl }}</a>
+            </div>
+            <p class="api-key-steps">密钥获取方式：API 控制台 → 企业级 → 共享 → 复制 APIkey</p>
+            <div class="field">
+              <label>API Key</label>
+              <input
+                v-model="config.runninghubApiKey"
+                class="api-key-input"
+                type="password"
+                placeholder="粘贴 RunningHub API Key"
+                @input="settingsError = ''"
+              />
+            </div>
+          </div>
+
+          <div class="setting-section">
+            <div class="field output-field">
+              <label>输出目录</label>
+              <input v-model="config.outputRoot" readonly />
+              <button class="icon-btn" @click="selectOutputRoot" title="选择输出目录"><FolderOpen :size="16" /></button>
+            </div>
+          </div>
+
+          <div class="setting-section">
+            <div class="setting-title-row">
+              <label>并发数量</label>
+              <strong>{{ config.concurrency }}</strong>
+            </div>
+            <input class="range-input" v-model.number="config.concurrency" type="range" min="1" max="100" />
+            <p class="field-help">任务越多越容易排队，卡顿时把这个数调小一点。</p>
+          </div>
+        </section>
+
+        <section class="panel settings-panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">默认参数</p>
+              <h3>生成规格</h3>
+            </div>
+          </div>
+
+          <div class="param-grid settings-param-grid">
+            <div class="field">
+              <label>AI 模型</label>
+              <select v-model="config.runninghubModel">
+                <option v-for="model in modelOptions" :key="model.value" :value="model.value">{{ model.label }}</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>比例</label>
+              <select v-model="params.aspectRatio">
+                <option value="auto">auto</option>
+                <option value="1:1">1:1</option>
+                <option value="2:3">2:3</option>
+                <option value="3:4">3:4</option>
+                <option value="4:3">4:3</option>
+                <option value="3:2">3:2</option>
+                <option value="9:16">9:16</option>
+                <option value="16:9">16:9</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>尺寸</label>
+              <select v-model="params.resolution">
+                <option value="2K">2K</option>
+                <option value="4K">4K</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-note">
+            <p>当前配置会在开始生成时一起保存，也会同步写入本地配置文件。</p>
+            <button class="ghost" @click="activeTab = 'workspace'"><Monitor :size="16" />回到操作台</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
     <div v-if="showOnboarding" class="modal-backdrop onboarding-backdrop">
       <section class="gate-modal" role="dialog" aria-modal="true" aria-label="关注公众号">
         <div class="gate-copy">
-          <img src="./assets/logo.jpg" alt="支点引入" />
+          <img src="./assets/logo.jpg" alt="万能AI批量编辑器" />
           <h2>关注公众号后使用</h2>
           <p>首次在本设备打开，需要扫码关注公众号后进入操作界面。</p>
         </div>
@@ -44,7 +362,9 @@
           <span>扫码关注公众号</span>
         </div>
         <p v-if="onboardingError" class="gate-error">{{ onboardingError }}</p>
-        <button class="primary gate-action" @click="completeOnboarding"><CheckCircle2 :size="16" />已扫码关注，进入使用</button>
+        <button class="primary gate-action" @click="completeOnboarding">
+          <CheckCircle2 :size="16" />已扫码关注，进入使用
+        </button>
       </section>
     </div>
 
@@ -74,215 +394,44 @@
           <button class="icon-btn close-btn" @click="showDonate = false" title="关闭"><X :size="18" /></button>
         </div>
         <div class="alipay-card">
-          <div class="alipay-card-head">
-            <span>支付宝</span>
-            <strong>扫码请作者喝奶茶</strong>
-          </div>
           <div class="donate-qr">
             <img :src="alipayQr" alt="支付宝收款二维码" />
           </div>
-          <p>使用支付宝扫码支持</p>
         </div>
       </section>
     </div>
-
-    <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
-      <section class="settings-modal" role="dialog" aria-modal="true" aria-label="API设置">
-        <div class="modal-header">
-          <div>
-            <h2>API设置</h2>
-            <p>填写 RunningHub API Key 后即可生成。</p>
-          </div>
-          <button class="icon-btn close-btn" @click="showSettings = false" title="关闭"><X :size="18" /></button>
-        </div>
-
-        <div class="settings-form">
-          <p v-if="settingsError" class="settings-error">{{ settingsError }}</p>
-          <div class="setting-section">
-            <div class="inline-help api-key-link-row">
-              <a class="api-key-label-link" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink"><ExternalLink :size="14" />申请 API Key</a>
-              <a class="copyable-url" :href="runninghubApiKeyUrl" @click.prevent="openInviteLink">{{ runninghubApiKeyUrl }}</a>
-            </div>
-            <p class="api-key-steps">密钥获取方式：API 控制台 → 企业级 → 共享 → 复制 APIkey</p>
-            <div class="field">
-              <label>API Key</label>
-              <input
-                class="api-key-input"
-                :class="{ 'needs-api-key': !(config.runninghubApiKey || '').trim() }"
-                v-model="config.runninghubApiKey"
-                type="password"
-                placeholder="粘贴 RunningHub API Key"
-                @input="settingsError = ''"
-              />
-            </div>
-          </div>
-
-          <div class="setting-section">
-            <div class="field output-field">
-              <label>输出目录</label>
-              <input v-model="config.outputRoot" readonly />
-              <button class="icon-btn" @click="selectOutputRoot" title="选择输出目录"><FolderOpen :size="16" /></button>
-            </div>
-          </div>
-
-          <div class="setting-section">
-            <div class="setting-title-row">
-              <label>并发数量</label>
-              <strong>{{ config.concurrency }}</strong>
-            </div>
-            <input class="range-input" v-model.number="config.concurrency" type="range" min="1" max="100" />
-            <p class="field-help">同时生成的任务数量。失败变多时调低即可。</p>
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <button class="ghost" @click="showSettings = false"><X :size="16" />取消</button>
-          <button class="primary compact" @click="saveConfigAndClose"><Save :size="16" />保存设置</button>
-        </div>
-      </section>
-    </div>
-
-    <section v-if="view === 'setup'" class="setup-grid" :style="{ '--upload-area-height': `${uploadAreaHeight}px` }">
-      <UploadPanel title="参考素材" :images="imageSetA" @select-folder="selectFolder('A')" @select-files="selectFiles('A')" @drop-paths="addDropped('A', $event)" @remove="removeImage('A', $event)" @clear="imageSetA = []" />
-      <UploadPanel title="目标图片" :images="imageSetB" @select-folder="selectFolder('B')" @select-files="selectFiles('B')" @drop-paths="addDropped('B', $event)" @remove="removeImage('B', $event)" @clear="imageSetB = []" />
-    </section>
-
-    <div
-      v-if="view === 'setup'"
-      class="upload-resizer"
-      role="separator"
-      aria-orientation="horizontal"
-      :aria-valuemin="MIN_UPLOAD_AREA_HEIGHT"
-      :aria-valuemax="MAX_UPLOAD_AREA_HEIGHT"
-      :aria-valuenow="uploadAreaHeight"
-      title="拖拽调整图片区高度"
-      @pointerdown="startUploadResize"
-      @dblclick="resetUploadResize"
-    >
-      <GripHorizontal :size="18" />
-    </div>
-
-    <section v-if="view === 'setup'" class="control-panel">
-      <div class="prompt-field">
-        <label>提示词</label>
-        <textarea v-model="prompt" placeholder="例如：把参考素材中的主体融合到目标图片中，保持目标图片的人物姿态和场景自然真实。" @input="promptError = ''"></textarea>
-        <p v-if="promptError" class="form-error">{{ promptError }}</p>
-      </div>
-      <div class="generation-config-head">
-        <div>
-          <h2>生成配置</h2>
-          <p>选择模型和输出规格，批量任务会按参考素材 x 目标图片自动生成。</p>
-        </div>
-      </div>
-      <div class="generation-console">
-        <div class="param-grid">
-          <div class="field">
-            <label>AI&#27169;&#22411;</label>
-            <select v-model="config.runninghubModel">
-              <option v-for="model in modelOptions" :key="model.value" :value="model.value">{{ model.label }}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>&#27604;&#20363;</label>
-            <select v-model="params.aspectRatio">
-              <option value="auto">auto</option>
-              <option value="1:1">1:1</option>
-              <option value="2:3">2:3</option>
-              <option value="3:4">3:4</option>
-              <option value="4:3">4:3</option>
-              <option value="3:2">3:2</option>
-              <option value="9:16">9:16</option>
-              <option value="16:9">16:9</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>&#23610;&#23544;</label>
-            <select v-model="params.resolution">
-              <option value="2K">2K</option>
-              <option value="4K">4K</option>
-            </select>
-          </div>
-        </div>
-        <aside class="generation-summary">
-          <div class="summary-card">
-            <strong>{{ totalTasks }}</strong>
-            <span>&#24635;&#20219;&#21153;</span>
-          </div>
-          <button class="primary start-button" :disabled="!canStart" @click="startGeneration"><Play :size="16" />&#24320;&#22987;&#29983;&#25104;</button>
-        </aside>
-      </div>
-      <div class="submit-row">
-        <span class="hint">&#24403;&#21069;&#24182;&#21457;&#65306;{{ config.concurrency }}&#65292;&#29983;&#25104;&#32467;&#26524;&#20250;&#33258;&#21160;&#20445;&#23384;&#21040;&#26412;&#22320;&#36755;&#20986;&#30446;&#24405;&#12290;</span>
-      </div>
-    </section>
-
-    <section v-if="view === 'setup'" class="history-panel">
-      <div class="history-header">
-        <div>
-          <h2>历史记录</h2>
-          <p>最近生成的图片会显示在这里，方便回看和打开当天目录。</p>
-        </div>
-        <button class="ghost" @click="loadHistory"><RotateCcw :size="16" />刷新</button>
-      </div>
-      <div v-if="historyItems.length > 0" class="history-grid">
-        <article v-for="item in historyItems" :key="item.path" class="history-card">
-          <img :src="item.url" :alt="item.name" />
-          <div class="history-card-meta">
-            <strong :title="item.name">{{ item.name }}</strong>
-            <span>{{ item.day }}</span>
-          </div>
-          <button class="ghost history-open" @click="openHistoryDir(item.dir)"><FolderOpen :size="14" />打开目录</button>
-        </article>
-      </div>
-      <div v-else class="history-empty">暂无历史图片</div>
-    </section>
-
-    <section v-if="view === 'generation'" class="generation-view">
-      <div class="generation-header">
-        <div>
-          <h2>生成队列</h2>
-          <p>{{ statusText }}</p>
-        </div>
-        <div class="top-actions">
-          <button class="ghost" @click="retryFailed"><RotateCcw :size="16" />重新生成失败项</button>
-          <button class="ghost" @click="stopQueue" :disabled="stopped"><Square :size="16" />停止剩余任务</button>
-          <button class="ghost" @click="openBatchDir"><FolderOpen :size="16" />打开输出目录</button>
-          <button class="ghost" @click="backToSetup"><Images :size="16" />返回编辑</button>
-        </div>
-      </div>
-      <div class="cards-grid">
-        <article v-for="task in tasks" :key="task.id" class="task-card" :class="task.status">
-          <div class="thumb-row" :class="{ single: !task.image2Preview }">
-            <img :src="task.image1Preview" alt="参考素材" />
-            <img v-if="task.image2Preview" :src="task.image2Preview" alt="目标图片" />
-            <div v-else class="empty-target">单图生成</div>
-          </div>
-          <div v-if="task.outputUrl" class="result-box">
-            <img :src="task.outputUrl" alt="生成结果" />
-          </div>
-          <div v-else class="state-box">{{ stateLabel(task.status) }}</div>
-          <div class="task-meta">
-            <strong>#{{ task.index + 1 }}</strong>
-            <span>{{ task.statusMessage }}</span>
-          </div>
-          <button v-if="task.status === 'failed'" class="retry-btn" @click="retryTask(task)"><RotateCcw :size="16" />重新生成</button>
-        </article>
-      </div>
-    </section>
   </main>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { Bell, CheckCircle2, Coffee, ExternalLink, FolderOpen, GripHorizontal, Images, MessageCircle, Play, QrCode, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
+import {
+  Bell,
+  CheckCircle2,
+  Coffee,
+  ExternalLink,
+  FolderOpen,
+  History,
+  Images,
+  MessageCircle,
+  Monitor,
+  Play,
+  RotateCcw,
+  Save,
+  Settings,
+  Square,
+  X
+} from 'lucide-vue-next';
 import UploadPanel from './components/UploadPanel.vue';
 import officialAccountQr from './assets/official-account-qr.jpg';
 import wechatQr from './assets/wechat-qr.png';
 import alipayQr from './assets/alipay-qr.jpg';
 
-const DEFAULT_UPLOAD_AREA_HEIGHT = 396;
-const MIN_UPLOAD_AREA_HEIGHT = 280;
-const MAX_UPLOAD_AREA_HEIGHT = 760;
+const navItems = [
+  { key: 'workspace', label: '操作台', icon: Monitor },
+  { key: 'generation', label: '生成区域', icon: Images },
+  { key: 'settings', label: '设置区域', icon: Settings }
+];
 
 const MODEL_OPTIONS = [
   { label: 'gpt-image2', value: 'rhart-image-g-2' },
@@ -293,19 +442,12 @@ const MODEL_OPTIONS = [
 const LOW_COST_MODELS = new Set(MODEL_OPTIONS.map((model) => model.value));
 const runninghubApiKeyUrl = 'https://www.runninghub.cn/?inviteCode=1bcdcd69';
 
+const activeTab = ref('workspace');
 const imageSetA = ref([]);
 const imageSetB = ref([]);
 const prompt = ref('');
 const promptError = ref('');
-const view = ref('setup');
-const uploadAreaHeight = ref(DEFAULT_UPLOAD_AREA_HEIGHT);
-const showSettings = ref(false);
-const showWechat = ref(false);
-const showDonate = ref(false);
-const showOnboarding = ref(false);
 const settingsError = ref('');
-const onboardingShownAt = ref(0);
-const onboardingError = ref('');
 const activeNotice = ref(null);
 const historyItems = ref([]);
 const tasks = ref([]);
@@ -314,10 +456,12 @@ const stopped = ref(false);
 const activeCount = ref(0);
 const launchCount = ref(0);
 const lastLaunchAt = ref(0);
+const showWechat = ref(false);
+const showDonate = ref(false);
+const showOnboarding = ref(false);
+const onboardingShownAt = ref(0);
+const onboardingError = ref('');
 let queueTimer = null;
-let uploadResizeStartY = 0;
-let uploadResizeStartHeight = DEFAULT_UPLOAD_AREA_HEIGHT;
-const modelOptions = MODEL_OPTIONS;
 
 const config = reactive({
   outputRoot: '',
@@ -338,18 +482,23 @@ const params = reactive({
   resolution: '2K'
 });
 
+const modelOptions = MODEL_OPTIONS;
+
 const totalTasks = computed(() => (imageSetA.value.length > 0 ? imageSetA.value.length * Math.max(1, imageSetB.value.length) : 0));
 const canStart = computed(() => imageSetA.value.length > 0);
 const completedCount = computed(() => tasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
 const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
 const failedCount = computed(() => tasks.value.filter((task) => task.status === 'failed').length);
-const statusText = computed(() => `${completedCount.value}/${tasks.value.length} 已完成，成功 ${successCount.value}，失败 ${failedCount.value}`);
+const statusText = computed(() => {
+  if (!tasks.value.length) return '还没有开始生成，先回到操作台创建批次。';
+  return `${completedCount.value}/${tasks.value.length} 已完成，成功 ${successCount.value}，失败 ${failedCount.value}`;
+});
 
 onMounted(async () => {
   Object.assign(config, await window.batchApi.loadConfig());
   config.provider = 'runninghub';
   config.runninghubModel = normalizeModel(config.runninghubModel);
-  config.concurrency = config.concurrency && config.concurrency !== 20 ? config.concurrency : 50;
+  config.concurrency = clampConcurrency(config.concurrency);
   config.simulateFailures = false;
   params.aspectRatio = config.aspectRatio || 'auto';
   params.resolution = ['2K', '4K'].includes(config.resolution) ? config.resolution : '2K';
@@ -360,36 +509,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  stopUploadResize();
+  stopQueue();
 });
-
-function startUploadResize(event) {
-  if (event.button !== 0) return;
-  uploadResizeStartY = event.clientY;
-  uploadResizeStartHeight = uploadAreaHeight.value;
-  document.body.classList.add('is-upload-resizing');
-  window.addEventListener('pointermove', resizeUploadArea);
-  window.addEventListener('pointerup', stopUploadResize);
-  event.preventDefault();
-}
-
-function resizeUploadArea(event) {
-  uploadAreaHeight.value = clampUploadAreaHeight(uploadResizeStartHeight + event.clientY - uploadResizeStartY);
-}
-
-function stopUploadResize() {
-  document.body.classList.remove('is-upload-resizing');
-  window.removeEventListener('pointermove', resizeUploadArea);
-  window.removeEventListener('pointerup', stopUploadResize);
-}
-
-function resetUploadResize() {
-  uploadAreaHeight.value = DEFAULT_UPLOAD_AREA_HEIGHT;
-}
-
-function clampUploadAreaHeight(value) {
-  return Math.min(MAX_UPLOAD_AREA_HEIGHT, Math.max(MIN_UPLOAD_AREA_HEIGHT, Math.round(value)));
-}
 
 async function saveConfig() {
   config.concurrency = clampConcurrency(config.concurrency);
@@ -401,6 +522,11 @@ async function saveConfig() {
   });
 }
 
+async function saveSettings() {
+  await saveConfig();
+  settingsError.value = '';
+}
+
 async function completeOnboarding() {
   if (Date.now() - onboardingShownAt.value < 3000) {
     onboardingError.value = '请先扫码关注公众号';
@@ -410,16 +536,6 @@ async function completeOnboarding() {
   await saveConfig();
   showOnboarding.value = false;
   onboardingError.value = '';
-}
-
-async function saveConfigAndClose() {
-  if (!hasRunningHubApiKey()) {
-    settingsError.value = '请先填写 RunningHub API Key';
-    return;
-  }
-  await saveConfig();
-  showSettings.value = false;
-  settingsError.value = '';
 }
 
 async function selectOutputRoot() {
@@ -466,11 +582,12 @@ function openInviteLink() {
 async function startGeneration() {
   if (!prompt.value.trim()) {
     promptError.value = '请先填写提示词';
+    activeTab.value = 'workspace';
     return;
   }
   if (!hasRunningHubApiKey()) {
     settingsError.value = '请先填写 RunningHub API Key';
-    showSettings.value = true;
+    activeTab.value = 'settings';
     return;
   }
   await saveConfig();
@@ -486,7 +603,7 @@ async function startGeneration() {
     tasks: tasks.value.map(toManifestTask)
   });
   batchDir.value = batch.batchDir;
-  view.value = 'generation';
+  activeTab.value = 'generation';
   scheduleQueue();
 }
 
@@ -603,11 +720,6 @@ function stopQueue() {
     }
   });
   writeCurrentManifest();
-}
-
-function backToSetup() {
-  clearTimeout(queueTimer);
-  view.value = 'setup';
 }
 
 async function writeCurrentManifest() {
