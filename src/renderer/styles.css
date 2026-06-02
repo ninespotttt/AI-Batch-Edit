@@ -592,6 +592,14 @@ textarea {
   color: var(--color-text-tertiary);
 }
 
+.qr-image {
+  width: 148px;
+  height: 148px;
+  display: block;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+
 .wechat-qr {
   margin-bottom: 0;
 }

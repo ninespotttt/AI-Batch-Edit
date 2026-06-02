@@ -23,8 +23,8 @@
           <p>首次在本设备打开，需要扫码关注公众号后进入操作界面。</p>
         </div>
         <div class="qr-placeholder">
-          <QrCode :size="96" />
-          <span>公众号二维码位置</span>
+          <img class="qr-image" :src="officialAccountQr" alt="公众号二维码" />
+          <span>扫码关注公众号</span>
         </div>
         <p v-if="onboardingError" class="gate-error">{{ onboardingError }}</p>
         <button class="primary gate-action" @click="completeOnboarding"><CheckCircle2 :size="16" />已扫码关注，进入使用</button>
@@ -237,6 +237,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { CheckCircle2, ExternalLink, FolderOpen, GripHorizontal, Images, MessageCircle, Play, QrCode, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
 import UploadPanel from './components/UploadPanel.vue';
+import officialAccountQr from './assets/official-account-qr.jpg';
 
 const DEFAULT_UPLOAD_AREA_HEIGHT = 396;
 const MIN_UPLOAD_AREA_HEIGHT = 280;
