@@ -111,6 +111,51 @@ span {
   gap: 10px;
 }
 
+.notice-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -8px 0 24px;
+  padding: 12px 14px;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.notice-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.notice-content svg {
+  flex: 0 0 auto;
+  color: var(--color-primary);
+}
+
+.notice-content strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+
+.notice-content p {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .ghost,
 .primary,
 .retry-btn,
@@ -533,7 +578,8 @@ textarea {
 }
 
 .gate-modal,
-.wechat-modal {
+.wechat-modal,
+.donate-modal {
   width: 420px;
   max-width: calc(100vw - 48px);
   border-radius: var(--radius-lg);
@@ -602,6 +648,65 @@ textarea {
 
 .wechat-qr {
   margin-bottom: 0;
+}
+
+.milk-tea-trigger {
+  color: var(--color-primary);
+}
+
+.donate-modal {
+  width: 390px;
+}
+
+.alipay-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #cfe8ff;
+  border-radius: var(--radius-md);
+  background: #f2f9ff;
+}
+
+.alipay-card-head {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  color: #1677ff;
+}
+
+.alipay-card-head span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alipay-card-head strong {
+  color: var(--color-text-primary);
+  font-size: 17px;
+}
+
+.donate-qr {
+  display: grid;
+  place-items: center;
+  width: 176px;
+  height: 176px;
+  border: 1px solid #d8ecff;
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  color: #1677ff;
+}
+
+.donate-qr img {
+  width: 160px;
+  height: 160px;
+  display: block;
+  object-fit: contain;
+}
+
+.alipay-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 .gate-error {

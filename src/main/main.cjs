@@ -1,9 +1,15 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const fs = require('fs');
+const https = require('https');
 const path = require('path');
 const { canonicalModel, generateRunningHubImage } = require('./runninghub.cjs');
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const NOTICE_URL = 'https://raw.githubusercontent.com/ninespotttt/AI-Batch-Edit/main/notice.json';
+const ALLOWED_EXTERNAL_URLS = [
+  /^https:\/\/www\.runninghub\.cn\//,
+  /^https:\/\/github\.com\/ninespotttt\/AI-Batch-Edit(?:\/|$)/
+];
 
 let mainWindow;
 
@@ -33,7 +39,8 @@ function defaultConfig() {
     resolution: '2K',
     concurrency: 50,
     simulateFailures: false,
-    onboardingCompleted: false
+    onboardingCompleted: false,
+    dismissedNoticeIds: []
   };
 }
 
@@ -51,8 +58,53 @@ function saveConfig(nextConfig) {
   fs.mkdirSync(userDataDir(), { recursive: true });
   const merged = { ...loadConfig(), ...nextConfig, provider: 'runninghub' };
   merged.runninghubModel = canonicalModel(merged.runninghubModel);
+  merged.dismissedNoticeIds = Array.isArray(merged.dismissedNoticeIds) ? merged.dismissedNoticeIds : [];
   fs.writeFileSync(configPath(), JSON.stringify(merged, null, 2), 'utf8');
   return merged;
+}
+
+function fetchJson(url, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { timeout: timeoutMs }, (response) => {
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`通知读取失败：${response.statusCode}`));
+        return;
+      }
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        body += chunk;
+      });
+      response.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch {
+          reject(new Error('通知内容不是有效 JSON'));
+        }
+      });
+    });
+
+    request.on('timeout', () => request.destroy(new Error('通知读取超时')));
+    request.on('error', reject);
+  });
+}
+
+function normalizeNotice(raw) {
+  if (!raw || raw.enabled === false || !raw.id || !raw.title || !raw.message) return null;
+  return {
+    id: String(raw.id).slice(0, 120),
+    type: String(raw.type || 'info').slice(0, 40),
+    title: String(raw.title).slice(0, 80),
+    message: String(raw.message).slice(0, 240),
+    buttonText: raw.buttonText ? String(raw.buttonText).slice(0, 24) : '',
+    buttonUrl: raw.buttonUrl ? String(raw.buttonUrl) : '',
+    force: Boolean(raw.force)
+  };
+}
+
+function isAllowedExternalUrl(url) {
+  return ALLOWED_EXTERNAL_URLS.some((pattern) => pattern.test(String(url || '')));
 }
 
 function toFileUrl(filePath) {
@@ -287,6 +339,26 @@ ipcMain.handle('history:list', (_event, payload) => {
   return listHistory(payload?.outputRoot, payload?.limit);
 });
 
+ipcMain.handle('notice:check', async () => {
+  try {
+    const notice = normalizeNotice(await fetchJson(NOTICE_URL));
+    const dismissedIds = loadConfig().dismissedNoticeIds;
+    if (!notice || (!notice.force && dismissedIds.includes(notice.id))) return null;
+    return notice;
+  } catch (error) {
+    console.warn(error?.message || error);
+    return null;
+  }
+});
+
+ipcMain.handle('notice:dismiss', (_event, noticeId) => {
+  const id = String(noticeId || '').trim();
+  if (!id) return loadConfig();
+  const config = loadConfig();
+  const dismissedNoticeIds = Array.from(new Set([...(config.dismissedNoticeIds || []), id])).slice(-30);
+  return saveConfig({ dismissedNoticeIds });
+});
+
 ipcMain.handle('shell:openPath', async (_event, targetPath) => {
   const finalPath = targetPath || loadConfig().outputRoot || defaultConfig().outputRoot;
   fs.mkdirSync(finalPath, { recursive: true });
@@ -296,7 +368,7 @@ ipcMain.handle('shell:openPath', async (_event, targetPath) => {
 });
 
 ipcMain.handle('shell:openExternal', async (_event, url) => {
-  if (!/^https:\/\/www\.runninghub\.cn\//.test(String(url || ''))) {
+  if (!isAllowedExternalUrl(url)) {
     throw new Error('不允许打开未知链接');
   }
   await shell.openExternal(url);

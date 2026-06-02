@@ -9,11 +9,28 @@
         </div>
       </div>
       <div class="top-actions">
+        <button class="ghost milk-tea-trigger" @click="showDonate = true"><Coffee :size="16" />请作者喝奶茶</button>
         <button class="ghost" @click="showWechat = true"><MessageCircle :size="16" />微信联系</button>
         <button class="ghost" @click="openOutputRoot"><FolderOpen :size="16" />打开当前项目</button>
         <button class="ghost" @click="showSettings = true"><Settings :size="16" />API设置</button>
       </div>
     </header>
+
+    <section v-if="activeNotice" class="notice-bar" :class="`notice-${activeNotice.type}`">
+      <div class="notice-content">
+        <Bell :size="18" />
+        <div>
+          <strong>{{ activeNotice.title }}</strong>
+          <p>{{ activeNotice.message }}</p>
+        </div>
+      </div>
+      <div class="notice-actions">
+        <button v-if="activeNotice.buttonText && activeNotice.buttonUrl" class="primary compact" @click="openNoticeLink">
+          <ExternalLink :size="14" />{{ activeNotice.buttonText }}
+        </button>
+        <button v-if="!activeNotice.force" class="icon-btn" @click="dismissActiveNotice" title="关闭通知"><X :size="16" /></button>
+      </div>
+    </section>
 
     <div v-if="showOnboarding" class="modal-backdrop onboarding-backdrop">
       <section class="gate-modal" role="dialog" aria-modal="true" aria-label="关注公众号">
@@ -41,8 +58,30 @@
           <button class="icon-btn close-btn" @click="showWechat = false" title="关闭"><X :size="18" /></button>
         </div>
         <div class="qr-placeholder wechat-qr">
-          <QrCode :size="108" />
-          <span>微信二维码位置</span>
+          <img class="qr-image" :src="wechatQr" alt="微信二维码" />
+          <span>扫码添加微信</span>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="showDonate" class="modal-backdrop" @click.self="showDonate = false">
+      <section class="donate-modal" role="dialog" aria-modal="true" aria-label="请作者喝奶茶">
+        <div class="modal-header">
+          <div>
+            <h2>请作者喝奶茶</h2>
+            <p>觉得工具有帮助的话，可以扫码支持一下作者。</p>
+          </div>
+          <button class="icon-btn close-btn" @click="showDonate = false" title="关闭"><X :size="18" /></button>
+        </div>
+        <div class="alipay-card">
+          <div class="alipay-card-head">
+            <span>支付宝</span>
+            <strong>扫码请作者喝奶茶</strong>
+          </div>
+          <div class="donate-qr">
+            <img :src="alipayQr" alt="支付宝收款二维码" />
+          </div>
+          <p>使用支付宝扫码支持</p>
         </div>
       </section>
     </div>
@@ -235,9 +274,11 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { CheckCircle2, ExternalLink, FolderOpen, GripHorizontal, Images, MessageCircle, Play, QrCode, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
+import { Bell, CheckCircle2, Coffee, ExternalLink, FolderOpen, GripHorizontal, Images, MessageCircle, Play, QrCode, RotateCcw, Save, Settings, Square, X } from 'lucide-vue-next';
 import UploadPanel from './components/UploadPanel.vue';
 import officialAccountQr from './assets/official-account-qr.jpg';
+import wechatQr from './assets/wechat-qr.png';
+import alipayQr from './assets/alipay-qr.jpg';
 
 const DEFAULT_UPLOAD_AREA_HEIGHT = 396;
 const MIN_UPLOAD_AREA_HEIGHT = 280;
@@ -260,10 +301,12 @@ const view = ref('setup');
 const uploadAreaHeight = ref(DEFAULT_UPLOAD_AREA_HEIGHT);
 const showSettings = ref(false);
 const showWechat = ref(false);
+const showDonate = ref(false);
 const showOnboarding = ref(false);
 const settingsError = ref('');
 const onboardingShownAt = ref(0);
 const onboardingError = ref('');
+const activeNotice = ref(null);
 const historyItems = ref([]);
 const tasks = ref([]);
 const batchDir = ref('');
@@ -311,6 +354,7 @@ onMounted(async () => {
   params.aspectRatio = config.aspectRatio || 'auto';
   params.resolution = ['2K', '4K'].includes(config.resolution) ? config.resolution : '2K';
   await loadHistory();
+  await checkNotice();
   showOnboarding.value = !config.onboardingCompleted;
   if (showOnboarding.value) onboardingShownAt.value = Date.now();
 });
@@ -637,6 +681,22 @@ async function loadHistory() {
     outputRoot: config.outputRoot,
     limit: 24
   });
+}
+
+async function checkNotice() {
+  activeNotice.value = await window.batchApi.checkNotice();
+}
+
+async function dismissActiveNotice() {
+  if (!activeNotice.value) return;
+  await window.batchApi.dismissNotice(activeNotice.value.id);
+  activeNotice.value = null;
+}
+
+async function openNoticeLink() {
+  if (!activeNotice.value?.buttonUrl) return;
+  await window.batchApi.openExternal(activeNotice.value.buttonUrl);
+  if (!activeNotice.value.force) await dismissActiveNotice();
 }
 
 function openHistoryDir(dir) {
