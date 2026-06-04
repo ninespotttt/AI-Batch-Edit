@@ -1,7 +1,7 @@
 {
   "name": "zdyr-universal-ai-batch-editor",
-  "version": "0.1.0",
-  "description": "支点引入-万能AI批量编辑器",
+  "version": "1.0.0",
+  "description": "万能AI批量编辑器",
   "main": "src/main/main.cjs",
   "private": true,
   "scripts": {
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "axios": "^1.7.2",
-    "form-data": "^4.0.0"
+    "form-data": "^4.0.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",
@@ -29,7 +30,7 @@
   },
   "build": {
     "appId": "com.zdyr.universalbatch",
-    "productName": "支点引入-万能AI批量编辑器",
+    "productName": "万能AI批量编辑器",
     "directories": {
       "output": "release"
     },
@@ -45,7 +46,7 @@
         "zip"
       ],
       "signAndEditExecutable": false,
-      "artifactName": "支点引入-万能AI批量编辑器-win.${ext}"
+      "artifactName": "万能AI批量编辑器-win.${ext}"
     }
   }
 }

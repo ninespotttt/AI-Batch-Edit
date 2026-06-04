@@ -1,8 +1,24 @@
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
+const axios = require('axios');
+const sharp = require('sharp');
 
+const UPLOAD_CACHE_LIMIT = 300;
+const uploadUrlCache = new Map();
+
+function uploadCacheKey(filePath) {
+  const stat = fs.statSync(filePath);
+  return `${filePath}|${stat.size}|${Math.round(stat.mtimeMs)}`;
+}
+
+function rememberUploadUrl(key, url) {
+  uploadUrlCache.set(key, url);
+  if (uploadUrlCache.size > UPLOAD_CACHE_LIMIT) {
+    const oldestKey = uploadUrlCache.keys().next().value;
+    if (oldestKey) uploadUrlCache.delete(oldestKey);
+  }
+}
 const MODEL_ALIASES = {
   'rhart-image-g-2': 'rhart-image-g-2',
   'gpt2': 'rhart-image-g-2',
@@ -64,6 +80,16 @@ function modelSpec(model) {
     };
   }
   return modelSpec('rhart-image-g-2');
+}
+
+async function prepareUploadBuffer(filePath) {
+  const image = sharp(filePath, { failOn: 'none' });
+  const metadata = await image.metadata();
+  const width = metadata.width || 0;
+  const height = metadata.height || 0;
+  if (width <= 0 || height <= 0) return fs.readFileSync(filePath);
+  if (Math.max(width, height) <= 2048) return fs.readFileSync(filePath);
+  return image.resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true }).toBuffer();
 }
 
 function firstNestedValue(value, keys, visited = new Set()) {
@@ -161,7 +187,7 @@ function parseError(err) {
 
 class RunningHubClient {
   constructor({ apiKey, baseUrl }) {
-    if (!apiKey) throw new Error('请先在 API 设置中填写 API Key');
+    if (!apiKey) throw new Error('请先在API设置中填写API Key');
     this.apiKey = apiKey;
     this.host = (baseUrl || 'https://www.runninghub.cn').replace(/\/$/, '');
   }
@@ -189,8 +215,13 @@ class RunningHubClient {
 
   async uploadFile(filePath) {
     if (!filePath || !fs.existsSync(filePath)) throw new Error('图片文件不存在或无法读取');
+    const cacheKey = uploadCacheKey(filePath);
+    const cachedUrl = uploadUrlCache.get(cacheKey);
+    if (cachedUrl) return cachedUrl;
+
     const form = new FormData();
-    form.append('file', fs.readFileSync(filePath), {
+    const buffer = await prepareUploadBuffer(filePath);
+    form.append('file', buffer, {
       filename: path.basename(filePath),
       contentType: contentType(filePath)
     });
@@ -200,6 +231,7 @@ class RunningHubClient {
     });
     const url = collectUrls(response.data)[0];
     if (!url) throw new Error(`上传后没有返回素材地址: ${JSON.stringify(response.data).slice(0, 300)}`);
+    rememberUploadUrl(cacheKey, url);
     return url;
   }
 
@@ -220,19 +252,23 @@ class RunningHubClient {
         throw new Error(`任务失败: ${messageFrom(data).slice(0, 300)}`);
       }
     }
-    throw new Error(`图片任务等待超时，最后状态: ${lastStatus}`);
+    throw new Error(`图片任务等待超时，最后状态 ${lastStatus}`);
   }
 
-  async generate({ image1Path, image2Path, prompt, model, aspectRatio, resolution }) {
+  async createTask({ image1Path, image2Path, prompt, model, aspectRatio, resolution }) {
     const spec = modelSpec(model);
     const imageUrls = [await this.uploadFile(image1Path)];
     if (image2Path) {
       imageUrls.push(await this.uploadFile(image2Path));
     }
+    const sourceDimensions = await parseImageDimensions(image1Path);
+    const resolvedAspectRatio = aspectRatio === 'auto'
+      ? nearestAspectRatio(sourceDimensions.width, sourceDimensions.height, spec.aspectRatios, spec.fallbackAspect)
+      : aspectRatio;
     const payload = {
       prompt,
       imageUrls,
-      aspectRatio: spec.aspectRatios.includes(aspectRatio) ? aspectRatio : spec.fallbackAspect
+      aspectRatio: spec.aspectRatios.includes(resolvedAspectRatio) ? resolvedAspectRatio : spec.fallbackAspect
     };
     const normalizedResolution = String(resolution || '2K').toLowerCase();
     if (spec.resolutions.length > 0) {
@@ -243,9 +279,23 @@ class RunningHubClient {
     const taskData = await this.postJson(`/openapi/v2/${spec.base}/${spec.endpoint}`, payload, 60000);
     const taskId = taskIdFrom(taskData);
     if (!taskId) throw new Error(`API 没有返回任务 ID: ${JSON.stringify(taskData).slice(0, 300)}`);
+    return { taskId };
+  }
+
+  async fetchResult(taskId) {
+    if (!taskId) throw new Error('缺少远程任务 ID');
     const url = await this.waitForResult(taskId);
     const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
-    return Buffer.from(response.data);
+    return {
+      buffer: Buffer.from(response.data),
+      outputUrl: url
+    };
+  }
+
+  async generate({ image1Path, image2Path, prompt, model, aspectRatio, resolution }) {
+    const { taskId } = await this.createTask({ image1Path, image2Path, prompt, model, aspectRatio, resolution });
+    const result = await this.fetchResult(taskId);
+    return { ...result, taskId };
   }
 }
 
@@ -254,6 +304,44 @@ function contentType(filePath) {
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
   if (ext === '.webp') return 'image/webp';
   return 'image/png';
+}
+
+async function parseImageDimensions(filePath) {
+  try {
+    const metadata = await sharp(filePath, { failOn: 'none' }).metadata();
+    return {
+      width: Number(metadata.width) || 0,
+      height: Number(metadata.height) || 0
+    };
+  } catch {
+    return { width: 0, height: 0 };
+  }
+}
+
+function ratioValue(value) {
+  const text = String(value || '').trim();
+  const [width, height] = text.split(':').map((part) => Number(part));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return width / height;
+}
+
+function nearestAspectRatio(width, height, candidates, fallback) {
+  const sourceWidth = Number(width) || 0;
+  const sourceHeight = Number(height) || 0;
+  if (sourceWidth <= 0 || sourceHeight <= 0) return fallback;
+  const sourceRatio = sourceWidth / sourceHeight;
+  let best = fallback;
+  let bestDiff = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates || []) {
+    const candidateRatio = ratioValue(candidate);
+    if (!candidateRatio) continue;
+    const diff = Math.abs(candidateRatio - sourceRatio);
+    if (diff < bestDiff) {
+      best = candidate;
+      bestDiff = diff;
+    }
+  }
+  return best || fallback;
 }
 
 async function generateRunningHubImage(options) {
@@ -265,8 +353,28 @@ async function generateRunningHubImage(options) {
   }
 }
 
+async function startRunningHubImageTask(options) {
+  try {
+    const client = new RunningHubClient(options);
+    return await client.createTask(options);
+  } catch (err) {
+    throw new Error(parseError(err));
+  }
+}
+
+async function awaitRunningHubImageTask(options) {
+  try {
+    const client = new RunningHubClient(options);
+    return await client.fetchResult(options.taskId);
+  } catch (err) {
+    throw new Error(parseError(err));
+  }
+}
+
 module.exports = {
+  awaitRunningHubImageTask,
   generateRunningHubImage,
   canonicalModel,
-  modelSpec
+  modelSpec,
+  startRunningHubImageTask
 };
