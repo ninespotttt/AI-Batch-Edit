@@ -3,8 +3,8 @@
   "id": "2026-06-05-update-notice",
   "type": "update",
   "title": "V1 版本已更新",
-  "message":  "万能AI批量编辑器 V1 已发布，优化了图片库、批量生成和设置流程。",
+  "message":  " V1版本已发布，欢迎提出意见，可定制AI应用",
   "buttonText": "查看地址",
-  "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/latest",
+  "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/",
   "force": false
 }
