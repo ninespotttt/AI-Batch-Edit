@@ -59,7 +59,9 @@ function defaultConfig() {
     simulateFailures: false,
     pricingNoticeAccepted: false,
     onboardingCompleted: false,
-    dismissedNoticeIds: []
+    dismissedNoticeIds: [],
+    cachedNotice: null,
+    cachedNoticeUpdatedAt: ''
   };
 }
 
@@ -117,11 +119,13 @@ function loadConfig() {
     const raw = fs.readFileSync(configPath(), 'utf8');
     const parsed = parseStoredConfig(raw);
     const stored = parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value) ? parsed.value : {};
-    const config = { ...defaultConfig(), ...stored };
-    config.dismissedNoticeIds = Array.isArray(config.dismissedNoticeIds) ? config.dismissedNoticeIds : [];
-    const next = {
-      ...config,
-      provider: 'runninghub',
+  const config = { ...defaultConfig(), ...stored };
+  config.dismissedNoticeIds = Array.isArray(config.dismissedNoticeIds) ? config.dismissedNoticeIds : [];
+  config.cachedNotice = config.cachedNotice && typeof config.cachedNotice === 'object' && !Array.isArray(config.cachedNotice) ? config.cachedNotice : null;
+  config.cachedNoticeUpdatedAt = typeof config.cachedNoticeUpdatedAt === 'string' ? config.cachedNoticeUpdatedAt : '';
+  const next = {
+    ...config,
+    provider: 'runninghub',
       runninghubModel: canonicalModel(config.runninghubModel)
     };
     if (!next.aspectRatio || next.aspectRatio === 'auto') next.aspectRatio = '3:4';
@@ -145,6 +149,8 @@ function saveConfig(nextConfig) {
   };
   merged.runninghubModel = canonicalModel(merged.runninghubModel);
   merged.dismissedNoticeIds = Array.isArray(merged.dismissedNoticeIds) ? merged.dismissedNoticeIds : [];
+  merged.cachedNotice = merged.cachedNotice && typeof merged.cachedNotice === 'object' && !Array.isArray(merged.cachedNotice) ? merged.cachedNotice : null;
+  merged.cachedNoticeUpdatedAt = typeof merged.cachedNoticeUpdatedAt === 'string' ? merged.cachedNoticeUpdatedAt : '';
   fs.writeFileSync(configPath(), JSON.stringify(merged, null, 2), 'utf8');
   return merged;
 }
@@ -188,6 +194,25 @@ function normalizeNotice(raw) {
     buttonUrl: raw.buttonUrl ? String(raw.buttonUrl) : '',
     force: Boolean(raw.force)
   };
+}
+
+function readBundledNotice() {
+  try {
+    const bundledPath = path.join(app.getAppPath(), 'notice.json');
+    if (!fs.existsSync(bundledPath)) return null;
+    return JSON.parse(fs.readFileSync(bundledPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function resolveNoticeFromConfig(config) {
+  const cachedNotice = normalizeNotice(config?.cachedNotice);
+  if (!cachedNotice) return null;
+  if (!cachedNotice.force && Array.isArray(config?.dismissedNoticeIds) && config.dismissedNoticeIds.includes(cachedNotice.id)) {
+    return null;
+  }
+  return cachedNotice;
 }
 
 function isAllowedExternalUrl(url) {
@@ -644,14 +669,20 @@ ipcMain.handle('files:delete', (_event, payload) => {
 });
 
 ipcMain.handle('notice:check', async () => {
+  const config = loadConfig();
+  const cachedNotice = resolveNoticeFromConfig(config);
   try {
     const notice = normalizeNotice(await fetchJson(NOTICE_URL));
-    const dismissedIds = loadConfig().dismissedNoticeIds;
-    if (!notice || (!notice.force && dismissedIds.includes(notice.id))) return null;
-    return notice;
+    if (notice) {
+      saveConfig({ cachedNotice: notice, cachedNoticeUpdatedAt: new Date().toISOString() });
+      if (!notice.force && config.dismissedNoticeIds.includes(notice.id)) return null;
+      return notice;
+    }
+    if (cachedNotice) return cachedNotice;
+    return resolveNoticeFromConfig({ dismissedNoticeIds: config.dismissedNoticeIds, cachedNotice: readBundledNotice() });
   } catch (error) {
     console.warn(error?.message || error);
-    return null;
+    return cachedNotice || resolveNoticeFromConfig(loadConfig()) || resolveNoticeFromConfig({ dismissedNoticeIds: config.dismissedNoticeIds, cachedNotice: readBundledNotice() });
   }
 });
 

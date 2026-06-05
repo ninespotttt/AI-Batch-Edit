@@ -38,6 +38,7 @@
       "dist/**/*",
       "src/main/**/*",
       "build/icon.ico",
+      "notice.json",
       "package.json"
     ],
     "win": {

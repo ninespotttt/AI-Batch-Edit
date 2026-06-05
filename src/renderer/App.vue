@@ -559,6 +559,7 @@ async function bootstrapInitialState() {
     showPricingNotice.value = !config.pricingNoticeAccepted;
     showOnboarding.value = !showPricingNotice.value && !config.onboardingCompleted;
     if (showOnboarding.value) onboardingShownAt.value = Date.now();
+    activeNotice.value = config.cachedNotice && typeof config.cachedNotice === 'object' ? config.cachedNotice : null;
     void loadHistory();
     void checkNotice();
   } finally {
@@ -636,7 +637,11 @@ async function loadHistory() {
 }
 
 async function checkNotice() {
-  activeNotice.value = await window.batchApi.checkNotice();
+  const notice = await window.batchApi.checkNotice();
+  activeNotice.value = notice;
+  if (notice && typeof notice === 'object') {
+    config.cachedNotice = notice;
+  }
 }
 
 function openNoticeLink() {
