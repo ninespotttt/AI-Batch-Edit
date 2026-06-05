@@ -1,10 +1,10 @@
 {
   "enabled": true,
-  "id": "2026-06-02-update-notice",
+  "id": "2026-06-05-update-notice",
   "type": "update",
-  "title": "通知栏已接入",
-  "message": "以后你只需要更新 GitHub 仓库里的 notice.json，用户打开软件时就能看到这条通知。",
-  "buttonText": "查看新版",
+  "title": "V1 版本已更新",
+  "message":  "万能AI批量编辑器 V1 已发布，优化了图片库、批量生成和设置流程。",
+  "buttonText": "查看地址",
   "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/latest",
   "force": false
 }
