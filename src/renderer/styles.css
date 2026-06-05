@@ -926,6 +926,71 @@ textarea::placeholder {
   min-width: 104px;
 }
 
+.delete-confirm-modal {
+  width: 480px;
+  max-width: calc(100vw - 48px);
+  border: 1px solid rgba(255, 255, 255, 0.46);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 22px 64px rgba(15, 23, 42, 0.18);
+  padding: 24px;
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+
+.delete-confirm-body {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.delete-confirm-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fff7ed, #ffedd5);
+  color: var(--color-primary);
+}
+
+.delete-confirm-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.delete-confirm-copy h2 {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.delete-confirm-copy p {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.delete-confirm-copy span {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.delete-confirm-actions {
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+.delete-confirm-actions .ghost,
+.delete-confirm-actions .primary {
+  min-width: 104px;
+}
+
+.delete-confirm-primary {
+  box-shadow: 0 10px 22px rgba(255, 106, 20, 0.18);
+}
+
 .tutorial-modal {
   width: min(1040px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
@@ -2105,4 +2170,382 @@ textarea::placeholder {
   font-size: 28px;
   line-height: 1.08;
   margin-top: 2px;
+}
+
+/* Unified generation gallery: keep new and history cards in one stable grid. */
+.gallery-panel {
+  margin-top: 18px;
+  padding: 18px;
+}
+
+.gallery-panel-head {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.gallery-panel-head p {
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.gallery-grid.cards-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  align-items: start;
+  gap: 16px;
+  overflow: visible;
+  margin-top: 12px;
+}
+
+.gallery-card.task-card {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  padding: 10px;
+  overflow: visible;
+}
+
+.gallery-card .result-box,
+.gallery-card .state-box {
+  flex: none;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  margin-top: 0;
+  border-radius: var(--radius-sm);
+}
+
+.gallery-card .result-box img {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  display: block;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.gallery-card.success .result-box img,
+.gallery-card .result-box.complete img {
+  object-fit: cover;
+}
+
+.gallery-card .state-box {
+  position: relative;
+  background: #f1f5f9;
+  color: var(--color-text-secondary);
+}
+
+.gallery-card .task-meta {
+  min-height: 24px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.gallery-card .retry-btn {
+  flex: none;
+}
+
+.gallery-empty {
+  margin-top: 16px;
+  min-height: 128px;
+}
+
+.gallery-pager {
+  margin-top: 18px;
+}
+
+.gallery-preview-modal {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.gallery-preview-frame {
+  min-height: min(70vh, 720px);
+}
+
+.gallery-preview-frame img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+.preview-state-box {
+  position: relative;
+  min-height: min(70vh, 720px);
+}
+
+@media (max-width: 1100px) {
+  .gallery-grid.cards-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .gallery-grid.cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.gallery-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 160px));
+  gap: 14px;
+  align-items: stretch;
+  margin: 18px 0 18px;
+}
+
+.gallery-summary-strip .summary-chip {
+  min-height: 82px;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.gallery-summary-strip .summary-chip.success {
+  border-color: rgba(16, 185, 129, 0.28);
+  background: var(--color-success-bg);
+}
+
+.gallery-summary-strip .summary-chip.danger {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: var(--color-danger-bg);
+}
+
+@media (max-width: 860px) {
+  .gallery-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Polished loading state for generation cards. */
+.gallery-card .state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 48%, #f8fafc 100%);
+  background-size: 220% 220%;
+  color: #7a8491;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  animation: stateSoftSweep 2.6s ease-in-out infinite;
+}
+
+.gallery-card .state-box span {
+  position: relative;
+  z-index: 2;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.gallery-card .state-spinner {
+  position: relative;
+  inset: auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-width: 2px;
+  border-color: rgba(249, 115, 22, 0.14);
+  border-top-color: rgba(249, 115, 22, 0.72);
+  z-index: 2;
+  flex: 0 0 auto;
+}
+
+.gallery-card .state-box.state-running {
+  color: #6b7280;
+}
+
+.gallery-card .state-box.state-queued {
+  color: #8a94a3;
+}
+
+.gallery-card.running {
+  border-color: rgba(249, 115, 22, 0.65);
+}
+
+@keyframes stateSoftSweep {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+/* Friendly failed-state cards: compact message and retry inside the image area. */
+.gallery-card.failed {
+  border-color: rgba(239, 68, 68, 0.62);
+}
+
+.gallery-card .state-box.state-failed {
+  gap: 10px;
+  background: linear-gradient(135deg, #fff7f7 0%, #f8fafc 58%, #fff7f7 100%);
+  color: #9f3a3a;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  padding: 18px;
+}
+
+.gallery-card .state-box.state-failed .state-main-text {
+  max-width: 100%;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: keep-all;
+  color: #8f3b3b;
+  font-weight: 500;
+}
+
+.state-retry-btn {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.state-retry-btn:hover {
+  background: #fff;
+  border-color: rgba(239, 68, 68, 0.32);
+  transform: translateY(-1px);
+}
+
+.gallery-card.failed .task-meta span {
+  color: #b45353;
+}
+
+.preview-state-box.state-failed {
+  color: #9f3a3a;
+  background: linear-gradient(135deg, #fff7f7 0%, #f8fafc 58%, #fff7f7 100%);
+}
+/* Glass preview modal: no solid white card background. */
+.task-preview-backdrop {
+  background: rgba(15, 23, 42, 0.26);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+.task-preview-modal.gallery-preview-modal {
+  background: rgba(255, 255, 255, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+}
+
+.task-preview-modal.gallery-preview-modal .modal-header,
+.task-preview-modal.gallery-preview-modal .task-preview-footer {
+  color: rgba(17, 24, 39, 0.88);
+}
+
+.task-preview-modal.gallery-preview-modal .task-preview-frame,
+.task-preview-modal.gallery-preview-modal .gallery-preview-frame {
+  background: rgba(248, 250, 252, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+}
+
+.task-preview-modal.gallery-preview-modal .close-btn,
+.task-preview-modal.gallery-preview-modal .preview-nav {
+  background: rgba(255, 255, 255, 0.36);
+  border-color: rgba(255, 255, 255, 0.42);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+/* Top navigation scale tuning. */
+.top-nav {
+  gap: 10px;
+  padding: 7px;
+}
+
+.tab-btn {
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 19px;
+  font-size: 17px;
+  font-weight: 480;
+}
+
+.tab-btn svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2;
+}
+
+/* Brand title spacing: keep the header tighter without changing layout flow. */
+.brand-copy h1 {
+  transform: translateY(1px);
+}
+
+.brand-copy .eyebrow-copy {
+  margin-top: 5px;
+}
+
+/* Keep preview cards inside the viewport, including running placeholders. */
+.task-preview-modal.gallery-preview-modal {
+  width: min(920px, calc(100vw - 64px));
+  max-height: calc(100vh - 40px);
+  padding: 22px;
+  overflow: hidden;
+}
+
+.task-preview-modal.gallery-preview-modal .task-preview-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
+}
+
+.task-preview-modal.gallery-preview-modal .task-preview-frame,
+.task-preview-modal.gallery-preview-modal .gallery-preview-frame {
+  width: min(54vh, calc(100vw - 260px), 560px);
+  aspect-ratio: 3 / 4;
+  min-height: 0;
+  height: auto;
+  max-height: calc(100vh - 190px);
+  justify-self: center;
+}
+
+.task-preview-modal.gallery-preview-modal .gallery-preview-frame img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+
+.task-preview-modal.gallery-preview-modal .preview-state-box {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+@media (max-width: 860px) {
+  .task-preview-modal.gallery-preview-modal {
+    width: calc(100vw - 28px);
+    max-height: calc(100vh - 28px);
+    padding: 16px;
+  }
+
+  .task-preview-modal.gallery-preview-modal .task-preview-stage {
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    gap: 8px;
+  }
+
+  .task-preview-modal.gallery-preview-modal .task-preview-frame,
+  .task-preview-modal.gallery-preview-modal .gallery-preview-frame {
+    width: min(58vh, calc(100vw - 112px));
+    max-height: calc(100vh - 178px);
+  }
 }

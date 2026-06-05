@@ -264,12 +264,6 @@ function dateStamp() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function timeStamp() {
-  const date = new Date();
-  const pad = (n, size = 2) => String(n).padStart(size, '0');
-  return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}`;
-}
-
 function manifestPath(batchDir) {
   return path.join(batchDir, 'manifest.json');
 }
@@ -310,10 +304,10 @@ function collectBatchDirs(outputRoot) {
 }
 
 function buildOutputName(task) {
-  const ext = '.png';
-  const sourceName = task.image2Path || task.image1Path;
-  const pairPart = task.image2Path ? `目标-${task.image2Index + 1}` : '单图';
-  return `${timeStamp()}_${String(task.index + 1).padStart(4, '0')}_参考-${task.image1Index + 1}_${pairPart}_${safeFilePart(path.basename(sourceName, path.extname(sourceName)))}${ext}`;
+  const taskPart = String(task.index + 1).padStart(4, '0');
+  const refPart = `参考${task.image1Index + 1}`;
+  const targetPart = task.image2Path ? `目标${task.image2Index + 1}` : '单图';
+  return `${taskPart}_${refPart}_${targetPart}.png`;
 }
 
 function writeTaskOutput(batchDir, task, buffer) {
@@ -414,13 +408,6 @@ function listHistory(outputRoot, limit) {
 
   const maxItems = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.floor(Number(limit)) : items.length;
   return items.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, maxItems);
-}
-
-function safeFilePart(value) {
-  return String(value || '')
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-    .replace(/\s+/g, '_')
-    .slice(0, 80);
 }
 
 function unpackPayload(payload) {
@@ -636,6 +623,24 @@ ipcMain.handle('manifest:write', (_event, payload) => {
 
 ipcMain.handle('history:list', (_event, payload) => {
   return listHistory(payload?.outputRoot, payload?.limit);
+});
+
+ipcMain.handle('files:delete', (_event, payload) => {
+  const paths = Array.isArray(payload) ? payload : [];
+  const removed = [];
+  for (const targetPath of paths) {
+    const filePath = String(targetPath || '');
+    if (!filePath || !fs.existsSync(filePath)) continue;
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) continue;
+    try {
+      fs.unlinkSync(filePath);
+      removed.push(filePath);
+    } catch (error) {
+      console.warn('[files:delete] failed:', error?.message || error);
+    }
+  }
+  return removed;
 });
 
 ipcMain.handle('notice:check', async () => {

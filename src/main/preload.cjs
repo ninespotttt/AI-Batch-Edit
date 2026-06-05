@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('batchApi', {
   runTask: (payload) => ipcRenderer.invoke('generation:runTask', payload),
   writeManifest: (payload) => ipcRenderer.invoke('manifest:write', payload),
   listHistory: (payload) => ipcRenderer.invoke('history:list', payload),
+  deleteFiles: (paths) => ipcRenderer.invoke('files:delete', paths),
   onRecoveryResult: (callback) => bindRecoveryResult(callback),
   onRequestClose: (callback) => bindCloseRequest(callback),
   checkNotice: () => ipcRenderer.invoke('notice:check'),

@@ -43,22 +43,19 @@
       @start="startGeneration"
     />
 
-    <GenerationSection
+    <GallerySection
       v-show="activeTab === 'generation'"
       :tasks="tasks"
       :history-items="historyItems"
       :history-page="historyPage"
       :history-page-size="historyPageSize"
-      :status-text="statusText"
       :completed-count="completedCount"
       :success-count="successCount"
       :failed-count="failedCount"
       @retry-failed="retryFailed"
       @open-batch-dir="openBatchDir"
       @retry-task="retryTask"
-      @refresh-history="loadHistory"
-      @open-history-dir="openHistoryDir"
-      @change-history-page="changeHistoryPage"
+      @change-page="changeHistoryPage"
       @delete-selected="deleteSelectedTasks"
     />
 
@@ -84,7 +81,7 @@
         <div class="modal-header">
           <div>
             <h2>操作教程</h2>
-            <p>第一次配置时，按下面 4 步走一遍就够了。</p>
+            <p>第一次配置时，按下面 4 步走一遍即可。</p>
           </div>
           <button class="icon-btn close-btn" @click="showTutorial = false" title="关闭"><X :size="18" /></button>
         </div>
@@ -95,52 +92,28 @@
 
         <div class="tutorial-modal-body">
           <div class="tutorial-step-list">
-            <div class="tutorial-step">
-              <span>1</span>
-              <p>先点顶部导航里的 <strong>API</strong>，再进入 <strong>API 密钥</strong>。</p>
-            </div>
-            <div class="tutorial-step">
-              <span>2</span>
-              <p>切到 <strong>企业级-共享</strong>，在右侧操作里点 <strong>复制</strong>。</p>
-            </div>
-            <div class="tutorial-step">
-              <span>3</span>
-              <p>余额不够时，直接看右上角余额位置，点进去充值就行。</p>
-            </div>
-            <div class="tutorial-step">
-              <span>4</span>
-              <p>如果要看跑图进度、成功失败和任务状态，就去控制台查看。</p>
-            </div>
+            <div class="tutorial-step"><span>1</span><p>打开网站后，点顶部 <strong>API</strong>，再进入 <strong>API 密钥</strong>。</p></div>
+            <div class="tutorial-step"><span>2</span><p>切到 <strong>企业级-共享</strong>，在右侧操作里点 <strong>复制</strong>。</p></div>
+            <div class="tutorial-step"><span>3</span><p>余额不足时，看右上角余额位置，点进去充值。</p></div>
+            <div class="tutorial-step"><span>4</span><p>需要看跑图进度、任务状态，就回控制台查看。</p></div>
           </div>
 
           <div class="api-tutorial-gallery">
             <figure class="tutorial-shot">
-              <div class="tutorial-shot-copy">
-                <strong>第 1 步：进入 API 密钥页面</strong>
-                <p>先打开 RunningHub 网站，点顶部 <strong>API</strong>，再点里面的 <strong>API 密钥</strong>。</p>
-              </div>
+              <div class="tutorial-shot-copy"><strong>第 1 步：进入 API 密钥页面</strong><p>打开 RunningHub，点击顶部 API，再点 API 密钥。</p></div>
               <img :src="apiGuideStep1" alt="RunningHub API 页面入口示意" />
             </figure>
             <figure class="tutorial-shot">
-              <div class="tutorial-shot-copy">
-                <strong>第 2 步：复制 API Key</strong>
-                <p>切到 <strong>企业级-共享</strong>，在右侧操作里点 <strong>复制</strong>，把密钥带回来。</p>
-              </div>
-              <img :src="apiGuideStep2" alt="RunningHub API 密钥复制示意" />
+              <div class="tutorial-shot-copy"><strong>第 2 步：复制 API Key</strong><p>切到企业级-共享，在右侧操作里点复制，把密钥粘贴回本软件。</p></div>
+              <img :src="apiGuideStep2" alt="RunningHub API Key 复制示意" />
             </figure>
             <figure class="tutorial-shot">
-              <div class="tutorial-shot-copy">
-                <strong>第 3 步：看余额和充值</strong>
-                <p>右上角可以直接看到余额，余额不足时点进去先充值，不然跑图会失败。</p>
-              </div>
+              <div class="tutorial-shot-copy"><strong>第 3 步：查看余额和充值</strong><p>余额不足会导致跑图失败，先充值再生成。</p></div>
               <img :src="apiGuideStep3" alt="RunningHub 余额充值示意" />
             </figure>
             <figure class="tutorial-shot">
-              <div class="tutorial-shot-copy">
-                <strong>第 4 步：查看进度和状态</strong>
-                <p>回到控制台后，可以查看生成进度、成功失败、任务账单和图片状态。</p>
-              </div>
-              <img :src="apiGuideStep4" alt="RunningHub 控制台任务进度示意" />
+              <div class="tutorial-shot-copy"><strong>第 4 步：查看进度和状态</strong><p>控制台里可以查看任务进度、成功失败和图片状态。</p></div>
+              <img :src="apiGuideStep4" alt="RunningHub 任务状态示意" />
             </figure>
           </div>
         </div>
@@ -148,20 +121,18 @@
     </div>
 
     <div v-if="showPricingNotice" class="modal-backdrop onboarding-backdrop">
-      <section class="pricing-modal" role="dialog" aria-modal="true" aria-label="首次使用说明">
+      <section class="pricing-modal" role="dialog" aria-modal="true" aria-label="费用说明">
         <div class="gate-copy">
           <span class="gate-credit">抖音 @AI江子 出品</span>
-          <h2>先看一下使用说明</h2>
+          <h2>先说明一下费用</h2>
           <p>这个软件本身免费分享，需要进一步合作联系。</p>
         </div>
         <div class="pricing-card">
-          <p>生成图片时，会调用第三方 API 平台去跑图，费用是直接付给第三方平台的，不是付给软件作者。</p>
-          <p>目前大致按 0.1 元一张图来理解更直观，GPT 和 Banana 这类模型都会消耗对应的 token 或平台余额。</p>
-          <p>正常按需充值、按需使用就可以，也请不要恶意攻击或滥用接口，避免把账号和服务跑坏。</p>
+          <p>跑图需要调用第三方 API 平台，平台会收取图片生成的 token 费用。</p>
+          <p>目前生成图片大约 0.1 元/张，费用由第三方平台收取，不是软件收费。</p>
+          <p>GPT 和 Banana 生成图片都需要消耗 token，请按正常用途使用。</p>
         </div>
-        <button class="primary gate-action" @click="acceptPricingNotice">
-          <CheckCircle2 :size="16" />知道了，继续使用
-        </button>
+        <button class="primary gate-action" @click="acceptPricingNotice"><CheckCircle2 :size="16" />我知道了，进入使用</button>
       </section>
     </div>
 
@@ -177,17 +148,15 @@
           <span>扫码关注公众号</span>
         </div>
         <p v-if="onboardingError" class="gate-error">{{ onboardingError }}</p>
-        <button class="primary gate-action" @click="completeOnboarding">
-          <CheckCircle2 :size="16" />已扫码关注，进入使用
-        </button>
+        <button class="primary gate-action" @click="completeOnboarding"><CheckCircle2 :size="16" />已扫码关注，进入使用</button>
       </section>
     </div>
 
     <div v-if="showWechat" class="modal-backdrop" @click.self="showWechat = false">
-      <section class="wechat-modal" role="dialog" aria-modal="true" aria-label="微信联系">
+      <section class="wechat-modal" role="dialog" aria-modal="true" aria-label="联系">
         <div class="modal-header">
           <div>
-            <h2>微信联系</h2>
+            <h2>联系</h2>
             <p>微信和抖音都在这里，方便联系和关注。</p>
           </div>
           <button class="icon-btn close-btn" @click="showWechat = false" title="关闭"><X :size="18" /></button>
@@ -213,36 +182,28 @@
         <div class="modal-header">
           <div>
             <h2>请作者喝奶茶</h2>
-            <p>如果觉得这个工具有帮助，可以扫码支持一下作者。</p>
+            <p>如果觉得工具有帮助，可以扫码支持一下作者。</p>
           </div>
           <button class="icon-btn close-btn" @click="showDonate = false" title="关闭"><X :size="18" /></button>
         </div>
         <div class="alipay-card">
-          <div class="donate-qr">
-            <img :src="alipayQr" alt="支付宝收款二维码" />
-          </div>
+          <div class="donate-qr"><img :src="alipayQr" alt="支付宝二维码" /></div>
         </div>
       </section>
     </div>
 
     <div v-if="showBatchConfirm" class="modal-backdrop" @click.self="showBatchConfirm = false">
-      <section class="batch-confirm-modal" role="dialog" aria-modal="true" aria-label="大批量生成确认">
+      <section class="batch-confirm-modal" role="dialog" aria-modal="true" aria-label="确认生成">
         <div class="modal-header">
           <div>
-            <h2>大批量生成确认</h2>
-            <p>预计生成 {{ totalTasks }} 张图，是否继续？</p>
+            <h2>确认生成</h2>
+            <p>预计生成 {{ totalTasks }} 张图片，请确认后开始。</p>
           </div>
           <button class="icon-btn close-btn" @click="showBatchConfirm = false" title="关闭"><X :size="18" /></button>
         </div>
         <div class="batch-confirm-summary">
-          <div class="summary-chip">
-            <span>预计数量</span>
-            <strong>{{ totalTasks }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>并发上限</span>
-            <strong>{{ config.concurrency }}</strong>
-          </div>
+          <div class="summary-chip"><span>任务数量</span><strong>{{ totalTasks }}</strong></div>
+          <div class="summary-chip"><span>并发数量</span><strong>{{ config.concurrency }}</strong></div>
         </div>
         <div class="modal-actions batch-confirm-actions">
           <button class="ghost" @click="showBatchConfirm = false">取消</button>
@@ -251,15 +212,30 @@
       </section>
     </div>
 
+    <div v-if="showDeleteConfirm" class="modal-backdrop" @click.self="cancelDeleteConfirm">
+      <section class="delete-confirm-modal" role="dialog" aria-modal="true" aria-label="确认删除图片">
+        <div class="delete-confirm-body">
+          <div class="delete-confirm-icon"><AlertCircle :size="22" /></div>
+          <div class="delete-confirm-copy">
+            <h2>确认删除图片？</h2>
+            <p>删除后会同步移出图片库和本地输出目录。</p>
+            <span>{{ deleteConfirmDetail }}</span>
+          </div>
+        </div>
+        <div class="modal-actions delete-confirm-actions">
+          <button class="ghost" @click="cancelDeleteConfirm">取消</button>
+          <button class="primary delete-confirm-primary" @click="confirmDeleteSelected">确认删除</button>
+        </div>
+      </section>
+    </div>
+
     <div v-if="showExitConfirm" class="modal-backdrop" @click.self="cancelExitConfirm">
       <section class="exit-confirm-modal" role="dialog" aria-modal="true" aria-label="确认退出">
         <div class="exit-confirm-body">
-          <div class="exit-confirm-icon">
-            <AlertCircle :size="22" />
-          </div>
+          <div class="exit-confirm-icon"><AlertCircle :size="22" /></div>
           <div class="exit-confirm-copy">
-            <h2>确认退出</h2>
-            <p>确定要关闭万能AI批量编辑器吗？</p>
+            <h2>确认退出？</h2>
+            <p>如果还有任务在跑，建议先确认一下再退出。</p>
             <span>{{ exitConfirmDetail }}</span>
           </div>
         </div>
@@ -283,7 +259,7 @@ import { AlertCircle, CheckCircle2, Coffee, ExternalLink, Images, MessageCircle,
 import AppTopbar from './components/AppTopbar.vue';
 import NoticeBar from './components/NoticeBar.vue';
 import WorkspaceSection from './components/WorkspaceSection.vue';
-import GenerationSection from './components/GenerationSection.vue';
+import GallerySection from './components/GallerySection.vue';
 import SettingsSection from './components/SettingsSection.vue';
 import officialAccountQr from './assets/official-account-qr.jpg';
 import douyinQr from '../../抖音.jpg';
@@ -325,7 +301,7 @@ const operationNotice = ref('');
 const operationNoticeTone = ref('warning');
 const historyItems = ref([]);
 const historyPage = ref(1);
-const historyPageSize = ref(24);
+const historyPageSize = ref(50);
 const tasks = ref([]);
 const batchDir = ref('');
 const activeCount = ref(0);
@@ -336,10 +312,12 @@ const showDonate = ref(false);
 const showTutorial = ref(false);
 const showBatchConfirm = ref(false);
 const showExitConfirm = ref(false);
+const showDeleteConfirm = ref(false);
 const showPricingNotice = ref(false);
 const showOnboarding = ref(false);
 const onboardingShownAt = ref(0);
 const onboardingError = ref('');
+const pendingDeleteKeys = ref([]);
 let queueTimer = null;
 let operationNoticeTimer = null;
 let removeRecoveryListener = null;
@@ -379,22 +357,33 @@ const completedCount = computed(() => tasks.value.filter((task) => ['success', '
 const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
 const failedCount = computed(() => tasks.value.filter((task) => task.status === 'failed').length);
 const statusText = computed(() => {
-  if (!tasks.value.length) return '还没有开始生成，先回到操作台创建任务。';
+  if (!tasks.value.length) return '还没有开始生成，先回操作台创建任务。';
   return `${completedCount.value}/${tasks.value.length} 已完成，成功 ${successCount.value}，失败 ${failedCount.value}`;
 });
 const runningCount = computed(() => tasks.value.filter((task) => task.status === 'running').length);
 const queuedCount = computed(() => tasks.value.filter((task) => task.status === 'queued').length);
 const exitConfirmDetail = computed(() => {
-  if (runningCount.value > 0) return `现在还有 ${runningCount.value} 个任务正在生成，关闭后会停止当前界面，但已提交的远程任务下次打开仍会继续补抓结果。`;
-  if (queuedCount.value > 0) return `现在还有 ${queuedCount.value} 个任务在排队，关闭后这批等待中的任务不会继续执行。`;
+  if (runningCount.value > 0) return `当前还有 ${runningCount.value} 张图片正在生成，退出前建议先确认。`;
+  if (queuedCount.value > 0) return `当前还有 ${queuedCount.value} 张图片在等待生成，退出后队列会中断。`;
   return '如果还有任务在看，建议先确认一下再退出。';
+});
+
+const deleteConfirmDetail = computed(() => {
+  const keys = new Set(pendingDeleteKeys.value);
+  const selectedTasks = tasks.value.filter((task) => keys.has(`task:${task.id}`));
+  const runningTasks = selectedTasks.filter((task) => task.status === 'running');
+  const removableTasks = selectedTasks.filter((task) => task.status !== 'running');
+  const selectedHistoryCount = historyItems.value.filter((item) => keys.has(`history:${item.path}`)).length;
+  const removableCount = removableTasks.length + selectedHistoryCount;
+  if (runningTasks.length > 0) return `将删除 ${removableCount} 张图片，${runningTasks.length} 张生成中的图片会保留。`;
+  return `将删除 ${removableCount} 张图片，此操作不可撤销。`;
 });
 
 onMounted(() => {
   if (window.batchApi.onRecoveryResult) {
     removeRecoveryListener = window.batchApi.onRecoveryResult(async (payload) => {
       await loadHistory();
-      showOperationNotice(payload?.message || '已恢复远程任务结果', payload?.status === 'success' ? 'success' : 'warning');
+      showOperationNotice(payload?.message || '已恢复远程任务结果。', payload?.status === 'success' ? 'success' : 'warning');
     });
   }
   if (window.batchApi.onRequestClose) {
@@ -426,7 +415,7 @@ async function saveConfig() {
 async function saveSettings() {
   await saveConfig();
   settingsError.value = '';
-  showOperationNotice('保存成功，当前设置已写入本地配置。', 'success');
+  showOperationNotice('建议先添加参考素材，再添加目标图片。');
 }
 
 async function acceptPricingNotice() {
@@ -439,7 +428,7 @@ async function acceptPricingNotice() {
 
 async function completeOnboarding() {
   if (Date.now() - onboardingShownAt.value < 3000) {
-    onboardingError.value = '请先扫码关注公众号';
+    onboardingError.value = '请先扫码关注公众号。';
     return;
   }
   config.onboardingCompleted = true;
@@ -465,7 +454,7 @@ async function selectFolder(which) {
     return;
   }
   if (imageSetA.value.length === 0 && images.length > 0) {
-    showOperationNotice('你先加参考素材会更稳，当前只加目标图片也能存，但生成前还是要补参考素材。');
+    showOperationNotice('建议先添加参考素材，再添加目标图片。');
   }
   imageSetB.value = mergeImages(imageSetB.value, images);
 }
@@ -478,7 +467,7 @@ async function selectFiles(which) {
     return;
   }
   if (imageSetA.value.length === 0 && images.length > 0) {
-    showOperationNotice('你先加参考素材会更稳，当前只加目标图片也能存，但生成前还是要补参考素材。');
+    showOperationNotice('建议先添加参考素材，再添加目标图片。');
   }
   imageSetB.value = mergeImages(imageSetB.value, images);
 }
@@ -491,7 +480,7 @@ async function addDropped(which, paths) {
     return;
   }
   if (imageSetA.value.length === 0 && images.length > 0) {
-    showOperationNotice('你先加参考素材会更稳，当前只加目标图片也能存，但生成前还是要补参考素材。');
+    showOperationNotice('建议先添加参考素材，再添加目标图片。');
   }
   imageSetB.value = mergeImages(imageSetB.value, images);
 }
@@ -511,7 +500,7 @@ function removeImage(which, imagePath) {
   if (which === 'A') {
     imageSetA.value = imageSetA.value.filter((image) => image.path !== imagePath);
     if (imageSetA.value.length === 0 && imageSetB.value.length > 0) {
-      showOperationNotice('参考素材已经清空了，继续生成前记得先补回参考素材。');
+      showOperationNotice('建议先添加参考素材，再添加目标图片。');
     }
     return;
   }
@@ -739,7 +728,7 @@ async function beginGeneration() {
     activeTab.value = 'generation';
     scheduleQueue();
   } catch (error) {
-    launchError.value = error?.message || '启动生成失败，请检查设置后重试。';
+    launchError.value = error?.message || '创建生成任务失败，请检查图片和设置。';
     activeTab.value = 'workspace';
   }
 }
@@ -849,25 +838,54 @@ function retryFailed() {
   tasks.value.filter((task) => task.status === 'failed').forEach(retryTask);
 }
 
-async function deleteSelectedTasks(taskIds) {
-  const ids = new Set(Array.isArray(taskIds) ? taskIds : []);
-  if (ids.size === 0) return;
-  const runningSelected = tasks.value.filter((task) => ids.has(task.id) && task.status === 'running');
-  const removableIds = new Set(tasks.value.filter((task) => ids.has(task.id) && task.status !== 'running').map((task) => task.id));
-  if (removableIds.size === 0) {
-    showOperationNotice('正在生成中的卡片不能直接删除，请先等它完成。');
-    return;
-  }
-  tasks.value = tasks.value.filter((task) => !removableIds.has(task.id));
-  await writeCurrentManifest();
-  await loadHistory();
-  if (runningSelected.length > 0) {
-    showOperationNotice(`已删除 ${removableIds.size} 个卡片，正在生成的 ${runningSelected.length} 个已保留。`);
-    return;
-  }
-  showOperationNotice(`已删除 ${removableIds.size} 个卡片。`, 'success');
+async function deleteSelectedTasks(selectionKeys) {
+  pendingDeleteKeys.value = Array.isArray(selectionKeys) ? [...selectionKeys] : [];
+  if (pendingDeleteKeys.value.length === 0) return;
+  showDeleteConfirm.value = true;
 }
 
+function cancelDeleteConfirm() {
+  showDeleteConfirm.value = false;
+  pendingDeleteKeys.value = [];
+}
+
+async function confirmDeleteSelected() {
+  const selectionKeys = [...pendingDeleteKeys.value];
+  showDeleteConfirm.value = false;
+  pendingDeleteKeys.value = [];
+  await performDeleteSelected(selectionKeys);
+}
+
+async function performDeleteSelected(selectionKeys) {
+  const keys = new Set(Array.isArray(selectionKeys) ? selectionKeys : []);
+  if (keys.size === 0) return;
+
+  const selectedTasks = tasks.value.filter((task) => keys.has(`task:${task.id}`));
+  const runningTasks = selectedTasks.filter((task) => task.status === 'running');
+  const removableTasks = selectedTasks.filter((task) => task.status !== 'running');
+  const removableTaskIds = new Set(removableTasks.map((task) => task.id));
+  const taskOutputPaths = removableTasks.map((task) => task.outputPath).filter(Boolean);
+  const selectedHistoryPaths = historyItems.value.filter((item) => keys.has(`history:${item.path}`)).map((item) => item.path);
+  const filesToDelete = [...new Set([...taskOutputPaths, ...selectedHistoryPaths])];
+
+  if (removableTasks.length === 0 && filesToDelete.length === 0) {
+    showOperationNotice('正在生成中的图片不能直接删除，请先等它完成。');
+    return;
+  }
+
+  if (filesToDelete.length > 0 && window.batchApi.deleteFiles) {
+    await window.batchApi.deleteFiles(filesToDelete);
+  }
+
+  if (removableTaskIds.size > 0) {
+    tasks.value = tasks.value.filter((task) => !removableTaskIds.has(task.id));
+    await writeCurrentManifest();
+  }
+
+  await loadHistory();
+  const retainedText = runningTasks.length ? `，${runningTasks.length} 张生成中已保留` : '';
+  showOperationNotice(`已删除 ${removableTasks.length + selectedHistoryPaths.length} 张图片${retainedText}。`, 'success');
+}
 async function writeCurrentManifest() {
   if (!batchDir.value) return;
   await window.batchApi.writeManifest(stringifySafe({
@@ -886,3 +904,4 @@ async function writeCurrentManifest() {
   }));
 }
 </script>
+
