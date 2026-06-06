@@ -1,0 +1,23 @@
+{
+  "appId": "com.zdyr.universalbatch",
+  "productName": "涓囪兘AI鎵归噺缂栬緫鍣?",
+  "directories": {
+    "app": "protected-main",
+    "output": "release-obfuscated"
+  },
+  "files": [
+    "dist/**/*",
+    "src/main/**/*",
+    "build/icon.ico",
+    "notice.json",
+    "package.json"
+  ],
+  "win": {
+    "icon": "build/icon.ico",
+    "target": [
+      "zip"
+    ],
+    "signAndEditExecutable": false,
+    "artifactName": "universal-ai-batch-editor-protected-win.${ext}"
+  }
+}
