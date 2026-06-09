@@ -3,7 +3,7 @@
   "id": "2026-06-05-update-notice",
   "type": "update",
   "title": "V1 版本已更新",
-  "message":  " V1版本已发布，欢迎提出意见，可定制AI应用",
+  "message":  " V1版本已发布，欢迎使用，有bug可以指出，合作联系微信jiangzi4560",
   "buttonText": "查看地址",
   "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/",
   "force": false
