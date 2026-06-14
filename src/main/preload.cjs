@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('batchApi', {
   selectImageFiles: () => ipcRenderer.invoke('images:selectFiles'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   imagesFromPaths: (paths) => ipcRenderer.invoke('images:fromPaths', paths),
+  imagesFromClipboard: (items) => ipcRenderer.invoke('images:fromClipboard', items),
   selectOutputRoot: () => ipcRenderer.invoke('output:selectRoot'),
   createBatch: (payload) => ipcRenderer.invoke('output:createBatch', payload),
   runTask: (payload) => ipcRenderer.invoke('generation:runTask', payload),

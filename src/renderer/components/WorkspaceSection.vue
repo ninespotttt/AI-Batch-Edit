@@ -9,8 +9,10 @@
 
     <div class="setup-grid">
       <UploadPanel
-        title="参考素材"
+        title="图1"
         :images="imageSetA"
+        :active="activeUploadTarget === 'A'"
+        @activate="activeUploadTarget = 'A'"
         @select-folder="$emit('select-folder', 'A')"
         @select-files="$emit('select-files', 'A')"
         @drop-paths="$emit('drop-paths', 'A', $event)"
@@ -19,8 +21,10 @@
       />
 
       <UploadPanel
-        title="目标图片"
+        title="图2"
         :images="imageSetB"
+        :active="activeUploadTarget === 'B'"
+        @activate="activeUploadTarget = 'B'"
         @select-folder="$emit('select-folder', 'B')"
         @select-files="$emit('select-files', 'B')"
         @drop-paths="$emit('drop-paths', 'B', $event)"
@@ -55,10 +59,34 @@
           <div class="prompt-field">
             <textarea
               v-model="prompt"
-              placeholder="例如：把参考素材中的主体融合到目标图片里，保持姿态、光影和场景自然一致。"
+              placeholder="例如：让图1的模特穿上图2的衣服，图1模特长相不变。"
               @input="promptError = ''"
             ></textarea>
             <p v-if="promptError" class="form-error">{{ promptError }}</p>
+            <div class="prompt-history">
+              <button class="prompt-history-toggle" type="button" @click="showPromptHistory = !showPromptHistory">
+                <ChevronRight v-if="!showPromptHistory" :size="15" />
+                <ChevronDown v-else :size="15" />
+                <span>历史提示词</span>
+                <strong>{{ promptHistory.length }}</strong>
+              </button>
+
+              <div v-if="showPromptHistory" class="prompt-history-list">
+                <div
+                  v-for="item in promptHistory"
+                  :key="item"
+                  class="prompt-history-item"
+                >
+                  <button class="prompt-history-use" type="button" :title="item" @click="$emit('use-prompt-history', item)">
+                    <span>{{ item }}</span>
+                  </button>
+                  <button class="icon-btn prompt-history-delete" type="button" title="删除" @click.stop="$emit('delete-prompt-history', item)">
+                    <Trash2 :size="14" />
+                  </button>
+                </div>
+                <div v-if="promptHistory.length === 0" class="prompt-history-empty">暂无历史提示词</div>
+              </div>
+            </div>
           </div>
 
           <div class="param-grid workspace-param-grid">
@@ -110,8 +138,8 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue';
-import { GripVertical, Play } from 'lucide-vue-next';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { ChevronDown, ChevronRight, GripVertical, Play, Trash2 } from 'lucide-vue-next';
 import UploadPanel from './UploadPanel.vue';
 
 const imageSetA = defineModel('imageSetA', { type: Array, required: true });
@@ -128,13 +156,20 @@ defineProps({
   totalTasks: { type: Number, required: true },
   configConcurrency: { type: Number, required: true },
   canStart: { type: Boolean, required: true },
-  launchReadinessText: { type: String, required: true }
+  launchReadinessText: { type: String, required: true },
+  promptHistory: { type: Array, required: true }
 });
 
-defineEmits(['select-folder', 'select-files', 'drop-paths', 'remove', 'start']);
+const emit = defineEmits(['select-folder', 'select-files', 'drop-paths', 'remove', 'start', 'use-prompt-history', 'delete-prompt-history', 'paste-images']);
 
 const uploadAreaHeight = ref(340);
+const showPromptHistory = ref(false);
+const activeUploadTarget = ref('A');
 let isResizing = false;
+
+onMounted(() => {
+  window.addEventListener('paste', handlePaste);
+});
 
 function clampHeight(value) {
   return Math.min(520, Math.max(260, value));
@@ -170,5 +205,34 @@ function startResize(event) {
 onBeforeUnmount(() => {
   isResizing = false;
   document.body.classList.remove('is-upload-resizing');
+  window.removeEventListener('paste', handlePaste);
 });
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePaste(event) {
+  const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type?.startsWith('image/'));
+  if (files.length === 0) return;
+  event.preventDefault();
+  const items = [];
+  for (const file of files) {
+    const filePath = window.batchApi?.getPathForFile?.(file) || file.path || '';
+    if (filePath) {
+      items.push({ path: filePath });
+      continue;
+    }
+    items.push({
+      type: file.type || 'image/png',
+      dataUrl: await readFileAsDataUrl(file)
+    });
+  }
+  emit('paste-images', activeUploadTarget.value, items);
+}
 </script>

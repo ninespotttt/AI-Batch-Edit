@@ -36,11 +36,15 @@
       :config-concurrency="config.concurrency"
       :can-start="canStart"
       :launch-readiness-text="launchReadinessText"
+      :prompt-history="config.promptHistory"
       @select-folder="selectFolder"
       @select-files="selectFiles"
       @drop-paths="addDropped"
       @remove="removeImage"
       @start="startGeneration"
+      @use-prompt-history="usePromptHistory"
+      @delete-prompt-history="deletePromptHistory"
+      @paste-images="addPastedImages"
     />
 
     <GallerySection
@@ -261,6 +265,7 @@ import NoticeBar from './components/NoticeBar.vue';
 import WorkspaceSection from './components/WorkspaceSection.vue';
 import GallerySection from './components/GallerySection.vue';
 import SettingsSection from './components/SettingsSection.vue';
+import { addPromptToHistory, applyHistoryPrompt, normalizePromptHistory } from './promptHistory.mjs';
 import officialAccountQr from './assets/official-account-qr.jpg';
 import douyinQr from '../../抖音.jpg';
 import wechatQr from './assets/wechat-qr.png';
@@ -335,7 +340,8 @@ const config = reactive({
   concurrency: DEFAULT_CONCURRENCY,
   simulateFailures: false,
   pricingNoticeAccepted: false,
-  onboardingCompleted: false
+  onboardingCompleted: false,
+  promptHistory: []
 });
 
 const params = reactive({
@@ -415,7 +421,7 @@ async function saveConfig() {
 async function saveSettings() {
   await saveConfig();
   settingsError.value = '';
-  showOperationNotice('建议先添加参考素材，再添加目标图片。');
+  showOperationNotice('\u4fdd\u5b58\u6210\u529f', 'success');
 }
 
 async function acceptPricingNotice() {
@@ -481,6 +487,20 @@ async function addDropped(which, paths) {
   }
   if (imageSetA.value.length === 0 && images.length > 0) {
     showOperationNotice('建议先添加参考素材，再添加目标图片。');
+  }
+  imageSetB.value = mergeImages(imageSetB.value, images);
+}
+
+async function addPastedImages(which, items) {
+  const images = await window.batchApi.imagesFromClipboard(items);
+  launchError.value = '';
+  if (images.length === 0) return;
+  if (which === 'A') {
+    imageSetA.value = mergeImages(imageSetA.value, images);
+    return;
+  }
+  if (imageSetA.value.length === 0) {
+    showOperationNotice('建议先添加图1，再添加图2。');
   }
   imageSetB.value = mergeImages(imageSetB.value, images);
 }
@@ -554,7 +574,8 @@ async function bootstrapInitialState() {
     config.runninghubModel = normalizeModel(config.runninghubModel);
     config.concurrency = clampConcurrency(config.concurrency);
     config.simulateFailures = false;
-    params.aspectRatio = config.aspectRatio && config.aspectRatio !== 'auto' ? config.aspectRatio : '3:4';
+    config.promptHistory = normalizePromptHistory(config.promptHistory);
+    params.aspectRatio = config.aspectRatio || '3:4';
     params.resolution = ['2K', '4K'].includes(config.resolution) ? config.resolution : '2K';
     showPricingNotice.value = !config.pricingNoticeAccepted;
     showOnboarding.value = !showPricingNotice.value && !config.onboardingCompleted;
@@ -598,6 +619,7 @@ function toPlainTask(task) {
     image2Index: task.image2Index,
     image1Path: task.image1Path,
     image2Path: task.image2Path,
+    outputName: task.outputName,
     outputPath: task.outputPath,
     outputUrl: task.outputUrl,
     remoteTaskId: task.remoteTaskId,
@@ -616,6 +638,7 @@ function toManifestTask(task) {
     image2Index: task.image2Index,
     image1Path: task.image1Path,
     image2Path: task.image2Path,
+    outputName: task.outputName,
     outputPath: task.outputPath,
     outputUrl: task.outputUrl,
     remoteTaskId: task.remoteTaskId,
@@ -642,6 +665,16 @@ async function checkNotice() {
   if (notice && typeof notice === 'object') {
     config.cachedNotice = notice;
   }
+}
+
+function usePromptHistory(historyPrompt) {
+  prompt.value = applyHistoryPrompt(prompt.value, historyPrompt);
+  promptError.value = '';
+}
+
+async function deletePromptHistory(historyPrompt) {
+  config.promptHistory = normalizePromptHistory(config.promptHistory).filter((item) => item !== historyPrompt);
+  await saveConfig();
 }
 
 function openNoticeLink() {
@@ -718,6 +751,7 @@ async function beginGeneration() {
     return;
   }
   try {
+    config.promptHistory = addPromptToHistory(config.promptHistory, prompt.value);
     await saveConfig();
     activeCount.value = 0;
     launchCount.value = 0;
@@ -729,6 +763,9 @@ async function beginGeneration() {
       params: { ...params, provider: config.provider, model: config.runninghubModel },
       tasks: tasks.value.map(toManifestTask)
     }));
+    if (Array.isArray(batch.tasks) && batch.tasks.length === tasks.value.length) {
+      tasks.value = batch.tasks;
+    }
     batchDir.value = batch.batchDir;
     activeTab.value = 'generation';
     scheduleQueue();
@@ -750,6 +787,7 @@ function buildTasks() {
         image2Index: b ? image2Index : -1,
         image1Path: a.path,
         image2Path: b?.path || '',
+        outputName: '',
         outputPath: '',
         outputUrl: '',
         remoteTaskId: '',
@@ -909,4 +947,3 @@ async function writeCurrentManifest() {
   }));
 }
 </script>
-

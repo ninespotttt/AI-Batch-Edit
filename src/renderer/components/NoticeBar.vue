@@ -11,7 +11,7 @@
       <button v-if="notice.buttonText && notice.buttonUrl" class="primary compact" @click="$emit('open-link')">
         <ExternalLink :size="14" />{{ notice.buttonText }}
       </button>
-      <button v-if="!notice.force" class="icon-btn" @click="$emit('close')" title="关闭通知"><X :size="16" /></button>
+      <button class="icon-btn" @click="$emit('close')" title="关闭通知"><X :size="16" /></button>
     </div>
   </section>
 </template>

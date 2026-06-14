@@ -69,7 +69,7 @@
     </section>
 
     <div v-if="previewItem" class="modal-backdrop task-preview-backdrop" @click.self="closePreview">
-      <section class="task-preview-modal gallery-preview-modal" role="dialog" aria-modal="true" aria-label="图片预览">
+      <section class="task-preview-modal gallery-preview-modal" role="dialog" aria-modal="true" aria-label="图片预览" :style="{ '--preview-aspect-ratio': previewAspectRatio }">
         <div class="modal-header">
           <div>
             <h2>卡片预览</h2>
@@ -163,12 +163,28 @@ const previewIndex = computed(() => pagedGallery.value.findIndex((item) => item.
 const previewItem = computed(() => pagedGallery.value[previewIndex.value] || null);
 const hasPrevItem = computed(() => previewIndex.value > 0);
 const hasNextItem = computed(() => previewIndex.value >= 0 && previewIndex.value < pagedGallery.value.length - 1);
+const previewAspectRatio = ref('3 / 4');
+let previewAspectRatioToken = 0;
 
 watch(() => pagedGallery.value.map((item) => item.key), (keys) => {
   const visibleKeys = new Set(keys);
   selectedKeys.value = selectedKeys.value.filter((key) => visibleKeys.has(key));
   if (previewKey.value && !visibleKeys.has(previewKey.value)) previewKey.value = '';
 });
+
+watch(() => previewItem.value?.url || '', async (url) => {
+  const token = ++previewAspectRatioToken;
+  if (!url) {
+    previewAspectRatio.value = '3 / 4';
+    return;
+  }
+  try {
+    const ratio = await getImageAspectRatio(url);
+    if (token === previewAspectRatioToken) previewAspectRatio.value = ratio;
+  } catch {
+    if (token === previewAspectRatioToken) previewAspectRatio.value = '3 / 4';
+  }
+}, { immediate: true });
 
 onMounted(() => window.addEventListener('keydown', handlePreviewKeydown));
 onBeforeUnmount(() => window.removeEventListener('keydown', handlePreviewKeydown));
@@ -245,5 +261,22 @@ function handlePreviewKeydown(event) {
     event.preventDefault();
     showNextItem();
   }
+}
+
+function getImageAspectRatio(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!width || !height) {
+        reject(new Error('invalid image size'));
+        return;
+      }
+      resolve(`${width} / ${height}`);
+    };
+    image.onerror = reject;
+    image.src = url;
+  });
 }
 </script>

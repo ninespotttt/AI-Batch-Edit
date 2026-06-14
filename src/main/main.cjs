@@ -60,9 +60,35 @@ function defaultConfig() {
     pricingNoticeAccepted: false,
     onboardingCompleted: false,
     dismissedNoticeIds: [],
+    promptHistory: [],
     cachedNotice: null,
     cachedNoticeUpdatedAt: ''
   };
+}
+
+function normalizePromptHistory(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const item of value) {
+    const text = String(item || '').trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+    if (result.length >= 30) break;
+  }
+  return result;
+}
+
+function normalizeOutputRoot(outputRoot) {
+  const defaultOutputRoot = path.join(appRoot(), 'outputs');
+  const value = String(outputRoot || '').trim();
+  if (!value) return defaultOutputRoot;
+  const normalized = path.normalize(value);
+  if (/release(?:-obfuscated)?[\\/]+win-unpacked[\\/]+outputs$/i.test(normalized)) {
+    return defaultOutputRoot;
+  }
+  return normalized;
 }
 
 function isIntegerKeyObject(value) {
@@ -96,6 +122,18 @@ function parseStoredConfig(raw) {
   };
 }
 
+function unpackPayload(payload) {
+  if (payload == null) return {};
+  if (Buffer.isBuffer(payload)) payload = payload.toString('utf8');
+  if (typeof payload === 'string') {
+    const text = payload.trim();
+    if (!text) return {};
+    return JSON.parse(text);
+  }
+  if (typeof payload === 'object') return payload;
+  return {};
+}
+
 function quarantineBrokenConfig(reason) {
   try {
     if (!fs.existsSync(configPath())) return;
@@ -120,7 +158,10 @@ function loadConfig() {
     const parsed = parseStoredConfig(raw);
     const stored = parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value) ? parsed.value : {};
   const config = { ...defaultConfig(), ...stored };
+  const originalOutputRoot = config.outputRoot;
+  config.outputRoot = normalizeOutputRoot(config.outputRoot);
   config.dismissedNoticeIds = Array.isArray(config.dismissedNoticeIds) ? config.dismissedNoticeIds : [];
+  config.promptHistory = normalizePromptHistory(config.promptHistory);
   config.cachedNotice = config.cachedNotice && typeof config.cachedNotice === 'object' && !Array.isArray(config.cachedNotice) ? config.cachedNotice : null;
   config.cachedNoticeUpdatedAt = typeof config.cachedNoticeUpdatedAt === 'string' ? config.cachedNoticeUpdatedAt : '';
   const next = {
@@ -128,9 +169,9 @@ function loadConfig() {
     provider: 'runninghub',
       runninghubModel: canonicalModel(config.runninghubModel)
     };
-    if (!next.aspectRatio || next.aspectRatio === 'auto') next.aspectRatio = '3:4';
+    if (!next.aspectRatio) next.aspectRatio = '3:4';
     if (!next.resolution) next.resolution = '2K';
-    if (parsed.repaired) {
+    if (parsed.repaired || config.outputRoot !== originalOutputRoot) {
       fs.writeFileSync(configPath(), JSON.stringify(next, null, 2), 'utf8');
     }
     return next;
@@ -148,7 +189,9 @@ function saveConfig(nextConfig) {
     provider: 'runninghub'
   };
   merged.runninghubModel = canonicalModel(merged.runninghubModel);
+  merged.outputRoot = normalizeOutputRoot(merged.outputRoot);
   merged.dismissedNoticeIds = Array.isArray(merged.dismissedNoticeIds) ? merged.dismissedNoticeIds : [];
+  merged.promptHistory = normalizePromptHistory(merged.promptHistory);
   merged.cachedNotice = merged.cachedNotice && typeof merged.cachedNotice === 'object' && !Array.isArray(merged.cachedNotice) ? merged.cachedNotice : null;
   merged.cachedNoticeUpdatedAt = typeof merged.cachedNoticeUpdatedAt === 'string' ? merged.cachedNoticeUpdatedAt : '';
   fs.writeFileSync(configPath(), JSON.stringify(merged, null, 2), 'utf8');
@@ -209,7 +252,7 @@ function readBundledNotice() {
 function resolveNoticeFromConfig(config) {
   const cachedNotice = normalizeNotice(config?.cachedNotice);
   if (!cachedNotice) return null;
-  if (!cachedNotice.force && Array.isArray(config?.dismissedNoticeIds) && config.dismissedNoticeIds.includes(cachedNotice.id)) {
+  if (Array.isArray(config?.dismissedNoticeIds) && config.dismissedNoticeIds.includes(cachedNotice.id)) {
     return null;
   }
   return cachedNotice;
@@ -236,6 +279,12 @@ function previewCachePath(filePath) {
     .update([filePath, stat.size, stat.mtimeMs].join('|'))
     .digest('hex');
   return path.join(previewCacheDir(), `${key}.webp`);
+}
+
+function clipboardImageDir() {
+  const dir = path.join(userDataDir(), 'clipboard-images');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 async function createPreviewUrl(filePath) {
@@ -283,10 +332,27 @@ async function mapImage(filePath, index) {
   };
 }
 
+async function saveClipboardImage(item, index) {
+  const rawDataUrl = String(item?.dataUrl || '');
+  const match = /^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/i.exec(rawDataUrl);
+  if (!match) return null;
+  const type = match[1].toLowerCase();
+  const extension = type.includes('webp') ? 'webp' : type.includes('jpeg') || type.includes('jpg') ? 'jpg' : 'png';
+  const filePath = path.join(clipboardImageDir(), `${Date.now()}-${index}.${extension}`);
+  fs.writeFileSync(filePath, Buffer.from(match[2], 'base64'));
+  return filePath;
+}
+
 function dateStamp() {
   const date = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function timeStamp() {
+  const date = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(date.getHours())}\uFF1A00`;
 }
 
 function manifestPath(batchDir) {
@@ -322,21 +388,101 @@ function updateManifestTask(batchDir, taskId, updater) {
 
 function collectBatchDirs(outputRoot) {
   if (!outputRoot || !fs.existsSync(outputRoot)) return [];
-  return fs.readdirSync(outputRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(outputRoot, entry.name))
-    .filter((dir) => fs.existsSync(manifestPath(dir)));
+  const dirs = [];
+  const visit = (dirPath) => {
+    if (!fs.existsSync(dirPath)) return;
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) return;
+    if (fs.existsSync(manifestPath(dirPath))) {
+      dirs.push(dirPath);
+      return;
+    }
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      if (entry.isDirectory()) visit(path.join(dirPath, entry.name));
+    }
+  };
+  visit(outputRoot);
+  return dirs;
 }
 
-function buildOutputName(task) {
-  const taskPart = String(task.index + 1).padStart(4, '0');
-  const refPart = `参考${task.image1Index + 1}`;
-  const targetPart = task.image2Path ? `目标${task.image2Index + 1}` : '单图';
-  return `${taskPart}_${refPart}_${targetPart}.png`;
+function outputNumberFromName(name) {
+  const match = /^(\d+)\.png$/i.exec(String(name || ''));
+  return match ? Number(match[1]) : 0;
+}
+
+function collectReservedOutputNumbers(batchDir) {
+  const numbers = new Set();
+  if (!fs.existsSync(batchDir)) return numbers;
+  for (const entry of fs.readdirSync(batchDir, { withFileTypes: true })) {
+    if (entry.isFile()) {
+      const number = outputNumberFromName(entry.name);
+      if (number > 0) numbers.add(number);
+    }
+  }
+  const manifest = readManifest(batchDir);
+  if (manifest && Array.isArray(manifest.tasks)) {
+    for (const task of manifest.tasks) {
+      const name = task?.outputName || (task?.outputPath ? path.basename(task.outputPath) : '');
+      const number = outputNumberFromName(name);
+      if (number > 0) numbers.add(number);
+    }
+  }
+  return numbers;
+}
+
+function nextOutputName(batchDir, reservedNumbers = collectReservedOutputNumbers(batchDir)) {
+  let number = reservedNumbers.size > 0 ? Math.max(...reservedNumbers) + 1 : 1;
+  while (reservedNumbers.has(number)) number += 1;
+  reservedNumbers.add(number);
+  return `${String(number).padStart(4, '0')}.png`;
+}
+
+function reserveTaskOutputNames(batchDir, tasks) {
+  const reservedNumbers = collectReservedOutputNumbers(batchDir);
+  return tasks.map((task) => {
+    const existingNumber = outputNumberFromName(task?.outputName);
+    if (existingNumber > 0) {
+      reservedNumbers.add(existingNumber);
+      return task;
+    }
+    return {
+      ...task,
+      outputName: nextOutputName(batchDir, reservedNumbers)
+    };
+  });
+}
+
+function mergeManifestTasks(existingTasks, incomingTasks) {
+  const merged = Array.isArray(existingTasks) ? [...existingTasks] : [];
+  const indexById = new Map(merged.map((task, index) => [task?.id, index]));
+  for (const task of incomingTasks) {
+    if (!task?.id) continue;
+    const index = indexById.get(task.id);
+    if (index === undefined) {
+      indexById.set(task.id, merged.length);
+      merged.push(task);
+    } else {
+      merged[index] = { ...merged[index], ...task };
+    }
+  }
+  return merged;
+}
+
+function buildOutputName(batchDir, task) {
+  const reservedName = String(task?.outputName || '').trim();
+  if (outputNumberFromName(reservedName) > 0) return reservedName;
+  return nextOutputName(batchDir);
 }
 
 function writeTaskOutput(batchDir, task, buffer) {
-  const outputPath = path.join(batchDir, buildOutputName(task));
+  const baseOutputPath = path.join(batchDir, buildOutputName(batchDir, task));
+  const parsedPath = path.parse(baseOutputPath);
+  let outputPath = baseOutputPath;
+  let suffix = 2;
+  while (fs.existsSync(outputPath)) {
+    outputPath = path.join(parsedPath.dir, `${parsedPath.name}-${suffix}${parsedPath.ext}`);
+    suffix += 1;
+  }
   fs.writeFileSync(outputPath, buffer);
   return {
     outputPath,
@@ -411,39 +557,29 @@ function listHistory(outputRoot, limit) {
   const root = outputRoot || loadConfig().outputRoot || defaultConfig().outputRoot;
   if (!fs.existsSync(root)) return [];
   const items = [];
-  const days = fs.readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(root, entry.name));
-
-  for (const dayDir of days) {
-    for (const entry of fs.readdirSync(dayDir, { withFileTypes: true })) {
-      const filePath = path.join(dayDir, entry.name);
+  const visit = (dirPath) => {
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const filePath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        visit(filePath);
+        continue;
+      }
       if (!entry.isFile() || !isImage(filePath)) continue;
       const stat = fs.statSync(filePath);
       items.push({
         path: filePath,
         url: toFileUrl(filePath),
         name: entry.name,
-        day: path.basename(dayDir),
-        dir: dayDir,
+        day: path.basename(path.dirname(path.dirname(filePath))) || path.basename(path.dirname(filePath)),
+        dir: path.dirname(filePath),
         mtimeMs: stat.mtimeMs
       });
     }
-  }
+  };
+  visit(root);
 
   const maxItems = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.floor(Number(limit)) : items.length;
   return items.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, maxItems);
-}
-
-function unpackPayload(payload) {
-  if (typeof payload === 'string') {
-    try {
-      return JSON.parse(payload);
-    } catch {
-      throw new Error('参数解析失败');
-    }
-  }
-  return payload || {};
 }
 
 async function runMockAdapter(task, options) {
@@ -569,6 +705,19 @@ ipcMain.handle('images:fromPaths', (_event, paths) => {
   return Promise.all(imagePaths.map((filePath, index) => mapImage(filePath, index)));
 });
 
+ipcMain.handle('images:fromClipboard', async (_event, items) => {
+  const imagePaths = [];
+  for (const item of items || []) {
+    if (item?.path && isImage(item.path) && fs.existsSync(item.path)) {
+      imagePaths.push(item.path);
+      continue;
+    }
+    const filePath = await saveClipboardImage(item, imagePaths.length);
+    if (filePath) imagePaths.push(filePath);
+  }
+  return Promise.all(imagePaths.map((filePath, index) => mapImage(filePath, index)));
+});
+
 ipcMain.handle('output:selectRoot', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: '选择输出目录',
@@ -582,16 +731,20 @@ ipcMain.handle('output:createBatch', (_event, payload) => {
   const data = unpackPayload(payload);
   const config = loadConfig();
   const outputRoot = data.outputRoot || config.outputRoot || defaultConfig().outputRoot;
-  const batchDir = path.join(outputRoot, dateStamp());
+  const batchDir = path.join(outputRoot, dateStamp(), timeStamp());
   fs.mkdirSync(batchDir, { recursive: true });
+  const existingManifest = readManifest(batchDir);
+  const tasks = reserveTaskOutputNames(batchDir, Array.isArray(data.tasks) ? data.tasks : []);
   const manifest = {
-    createdAt: new Date().toISOString(),
+    ...(existingManifest && typeof existingManifest === 'object' ? existingManifest : {}),
+    createdAt: existingManifest?.createdAt || new Date().toISOString(),
     prompt: data.prompt || '',
     params: data.params || {},
-    tasks: data.tasks || []
+    tasks: mergeManifestTasks(existingManifest?.tasks, tasks),
+    updatedAt: new Date().toISOString()
   };
   writeManifest(batchDir, manifest);
-  return { batchDir, manifestPath: path.join(batchDir, 'manifest.json') };
+  return { batchDir, manifestPath: path.join(batchDir, 'manifest.json'), tasks };
 });
 
 ipcMain.handle('generation:runTask', async (_event, payload) => {
@@ -601,10 +754,15 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
     throw new Error('输入图片不存在');
   }
 
+  const runTaskData = task.outputName ? task : { ...task, outputName: nextOutputName(batchDir) };
+  if (!task.outputName) {
+    updateManifestTask(batchDir, task.id, runTaskData);
+  }
+
   if (options?.provider === 'mock') {
-    const buffer = await runGenerationAdapter(task, options || {});
+    const buffer = await runGenerationAdapter(runTaskData, options || {});
     return {
-      ...writeTaskOutput(batchDir, task, buffer),
+      ...writeTaskOutput(batchDir, runTaskData, buffer),
       remoteTaskId: ''
     };
   }
@@ -613,19 +771,19 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
   const startResult = await startRunningHubImageTask({
     apiKey: config.runninghubApiKey,
     baseUrl: config.runninghubBaseUrl,
-    image1Path: task.image1Path,
-    image2Path: task.image2Path,
+    image1Path: runTaskData.image1Path,
+    image2Path: runTaskData.image2Path,
     prompt: options?.prompt || '',
     model: canonicalModel(config.runninghubModel),
     aspectRatio: options?.aspectRatio || '1:1',
     resolution: options?.resolution || '2K'
   });
   updateManifestTask(batchDir, task.id, {
-    ...task,
+    ...runTaskData,
     remoteTaskId: startResult.taskId,
     status: 'running',
     statusMessage: '生成中',
-    startedAt: task.startedAt || new Date().toISOString()
+    startedAt: runTaskData.startedAt || new Date().toISOString()
   });
 
   const result = await awaitRunningHubImageTask({
@@ -634,7 +792,7 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
     taskId: startResult.taskId
   });
   return {
-    ...writeTaskOutput(batchDir, task, result.buffer),
+    ...writeTaskOutput(batchDir, runTaskData, result.buffer),
     remoteTaskId: startResult.taskId
   };
 });
@@ -642,7 +800,14 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
 ipcMain.handle('manifest:write', (_event, payload) => {
   const { batchDir, manifest } = unpackPayload(payload);
   if (!batchDir || !manifest) throw new Error('manifest 参数不完整');
-  writeManifest(batchDir, manifest);
+  const existingManifest = readManifest(batchDir);
+  const nextManifest = {
+    ...(existingManifest && typeof existingManifest === 'object' ? existingManifest : {}),
+    ...manifest,
+    tasks: mergeManifestTasks(existingManifest?.tasks, Array.isArray(manifest.tasks) ? manifest.tasks : []),
+    updatedAt: new Date().toISOString()
+  };
+  writeManifest(batchDir, nextManifest);
   return true;
 });
 
@@ -675,7 +840,7 @@ ipcMain.handle('notice:check', async () => {
     const notice = normalizeNotice(await fetchJson(NOTICE_URL));
     if (notice) {
       saveConfig({ cachedNotice: notice, cachedNoticeUpdatedAt: new Date().toISOString() });
-      if (!notice.force && config.dismissedNoticeIds.includes(notice.id)) return null;
+      if (config.dismissedNoticeIds.includes(notice.id)) return null;
       return notice;
     }
     if (cachedNotice) return cachedNotice;

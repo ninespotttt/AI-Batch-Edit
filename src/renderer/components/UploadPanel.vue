@@ -1,5 +1,14 @@
 <template>
-  <section class="upload-panel" @dragover.prevent @drop.prevent="handleDrop">
+  <section
+    class="upload-panel"
+    :class="{ active }"
+    tabindex="-1"
+    @pointerdown="$emit('activate')"
+    @focusin="$emit('activate')"
+    @dragenter="$emit('activate')"
+    @dragover.prevent
+    @drop.prevent="handleDrop"
+  >
     <div class="panel-header">
       <div>
         <h2>{{ title }}</h2>
@@ -44,12 +53,14 @@ import { FolderOpen, ImagePlus, Trash2, X } from 'lucide-vue-next';
 
 defineProps({
   title: { type: String, required: true },
-  images: { type: Array, required: true }
+  images: { type: Array, required: true },
+  active: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['select-folder', 'select-files', 'drop-paths', 'remove', 'clear']);
+const emit = defineEmits(['select-folder', 'select-files', 'drop-paths', 'remove', 'clear', 'activate']);
 
 function handleDrop(event) {
+  emit('activate');
   const paths = [];
   for (const file of event.dataTransfer.files || []) {
     const filePath = window.batchApi?.getPathForFile?.(file) || file.path;

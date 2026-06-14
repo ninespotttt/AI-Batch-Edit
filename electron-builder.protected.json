@@ -1,6 +1,6 @@
 {
   "appId": "com.zdyr.universalbatch",
-  "productName": "涓囪兘AI鎵归噺缂栬緫鍣?",
+  "productName": "万能AI批量编辑器",
   "directories": {
     "app": "protected-main",
     "output": "release-obfuscated"
