@@ -10,6 +10,12 @@ const distDir = path.join(root, 'dist-protected');
 const protectedRoot = path.join(root, 'protected-main');
 const protectedDistDir = path.join(protectedRoot, 'dist');
 const protectedSrcDir = path.join(protectedRoot, 'src', 'main');
+const protectedStaticFiles = [
+  '密钥注册教程.pdf',
+  '微信.png',
+  '公众号logo.jpg',
+  'logo.jpg'
+];
 
 const obfuscationOptions = {
   compact: true,
@@ -111,6 +117,9 @@ async function main() {
   await writeProtectedPackageJson();
   await copyFileIfExists(path.join(root, 'notice.json'), path.join(protectedRoot, 'notice.json'));
   await copyFileIfExists(path.join(root, 'build', 'icon.ico'), path.join(protectedRoot, 'build', 'icon.ico'));
+  for (const name of protectedStaticFiles) {
+    await copyFileIfExists(path.join(root, name), path.join(protectedRoot, name));
+  }
   await cp(path.join(root, 'src', 'main'), protectedSrcDir, { recursive: true });
   await cp(distDir, protectedDistDir, { recursive: true });
 
