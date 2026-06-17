@@ -12,6 +12,7 @@
     "dist:win": "npm run build && electron-builder --win zip",
     "build:protected": "node scripts/build-obfuscated.mjs",
     "dist:win:protected": "npm run build:protected && electron-builder --config electron-builder.protected.json --win zip",
+    "dist:mac:protected": "npm run build:protected && node scripts/package-mac-obfuscated.mjs",
     "check": "node --check src/main/main.cjs && node --check src/main/preload.cjs && vite build"
   },
   "dependencies": {

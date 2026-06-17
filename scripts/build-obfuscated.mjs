@@ -76,7 +76,9 @@ async function copyFileIfExists(source, target) {
 
 async function writeProtectedPackageJson() {
   const source = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+  const productName = source.productName || source.build?.productName;
   delete source.build;
+  if (productName) source.productName = productName;
   await writeFile(path.join(protectedRoot, 'package.json'), JSON.stringify(source, null, 2), 'utf8');
 }
 

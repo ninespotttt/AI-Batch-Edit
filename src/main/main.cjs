@@ -35,6 +35,10 @@ function appRoot() {
   return app.isPackaged ? path.dirname(app.getPath('exe')) : process.cwd();
 }
 
+function defaultOutputRoot() {
+  return path.join(process.platform === 'darwin' ? app.getPath('documents') : appRoot(), 'outputs');
+}
+
 function userDataDir() {
   return app.getPath('userData');
 }
@@ -45,7 +49,7 @@ function configPath() {
 
 function defaultConfig() {
   return {
-    outputRoot: path.join(appRoot(), 'outputs'),
+    outputRoot: defaultOutputRoot(),
     provider: 'runninghub',
     runninghubApiKey: '',
     runninghubBaseUrl: 'https://www.runninghub.cn',
@@ -81,12 +85,12 @@ function normalizePromptHistory(value) {
 }
 
 function normalizeOutputRoot(outputRoot) {
-  const defaultOutputRoot = path.join(appRoot(), 'outputs');
+  const fallbackOutputRoot = defaultOutputRoot();
   const value = String(outputRoot || '').trim();
-  if (!value) return defaultOutputRoot;
+  if (!value) return fallbackOutputRoot;
   const normalized = path.normalize(value);
   if (/release(?:-obfuscated)?[\\/]+win-unpacked[\\/]+outputs$/i.test(normalized)) {
-    return defaultOutputRoot;
+    return fallbackOutputRoot;
   }
   return normalized;
 }
@@ -660,6 +664,14 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    allowWindowClose = false;
+    closePromptPending = false;
+    void createWindow();
+  }
 });
 
 app.on('before-quit', () => {
