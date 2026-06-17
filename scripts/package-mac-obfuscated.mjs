@@ -19,6 +19,10 @@ const stagingRoot = path.join(outputRoot, '.mac-staging');
 const productName = '万能AI批量编辑器';
 const appId = 'com.zdyr.universalbatch';
 const archs = ['x64', 'arm64'];
+const firstOpenFixScriptName = '首次打开修复.command';
+const universalMacZipName = `${productName}-mac.zip`;
+const universalArmDir = '苹果芯片版本';
+const universalX64Dir = 'Intel芯片版本';
 
 const crcTable = new Uint32Array(256);
 for (let i = 0; i < 256; i += 1) {
@@ -252,6 +256,35 @@ sleep 2
 `;
 }
 
+function universalFirstOpenFixScript() {
+  return `#!/bin/bash
+set -e
+
+cd "$(dirname "$0")"
+APP_NAME="${productName}.app"
+ARCH="$(/usr/bin/uname -m)"
+
+if [ "$ARCH" = "arm64" ]; then
+  APP="./${universalArmDir}/$APP_NAME"
+else
+  APP="./${universalX64Dir}/$APP_NAME"
+fi
+
+if [ ! -d "$APP" ]; then
+  echo "没有找到可打开的应用。请重新解压完整压缩包后再运行。"
+  echo
+  read -n 1 -s -r -p "按任意键退出..."
+  exit 1
+fi
+
+/usr/bin/xattr -cr "$APP" 2>/dev/null || true
+/usr/bin/open "$APP"
+
+echo "已自动选择并打开适合这台 Mac 的版本。"
+sleep 2
+`;
+}
+
 async function fileExists(filePath) {
   try {
     await stat(filePath);
@@ -464,7 +497,60 @@ async function createMacZip(arch, electronZip, appSourceDir, infoPlistBuffer, ic
   try {
     await copyElectronRuntime(writer, electronZip, infoPlistBuffer, iconBuffer);
     await addAppDirectory(writer, appSourceDir, `${productName}.app/Contents/Resources/app/`);
-    writer.addBuffer('首次打开修复.command', Buffer.from(firstOpenFixScript(), 'utf8'), {
+    writer.addBuffer(firstOpenFixScriptName, Buffer.from(firstOpenFixScript(), 'utf8'), {
+      mode: 0o100755
+    });
+  } finally {
+    writer.close();
+  }
+  return outputPath;
+}
+
+async function copyAppFromZip(writer, sourceZip, targetDir) {
+  await new Promise((resolve, reject) => {
+    yauzl.open(sourceZip, { lazyEntries: true, validateEntrySizes: false }, (openError, zipFile) => {
+      if (openError) {
+        reject(openError);
+        return;
+      }
+
+      zipFile.readEntry();
+      zipFile.on('entry', async (entry) => {
+        try {
+          if (entry.fileName.startsWith(`${productName}.app/`)) {
+            writer.addRaw({
+              name: `${targetDir}/${entry.fileName}`,
+              method: entry.compressionMethod,
+              crc32: entry.crc32,
+              compressedData: await readCompressedData(sourceZip, entry),
+              uncompressedSize: entry.uncompressedSize,
+              externalFileAttributes: entry.externalFileAttributes,
+              versionMadeBy: entry.versionMadeBy,
+              versionNeeded: entry.versionNeededToExtract,
+              modTime: entry.lastModFileTime,
+              modDate: entry.lastModFileDate
+            });
+          }
+          zipFile.readEntry();
+        } catch (error) {
+          zipFile.close();
+          reject(error);
+        }
+      });
+      zipFile.on('end', resolve);
+      zipFile.on('error', reject);
+    });
+  });
+}
+
+async function createUniversalMacZip(zipPathsByArch) {
+  const outputPath = path.join(outputRoot, universalMacZipName);
+  await rm(outputPath, { force: true });
+  const writer = new ZipWriter(outputPath);
+  try {
+    await copyAppFromZip(writer, zipPathsByArch.arm64, universalArmDir);
+    await copyAppFromZip(writer, zipPathsByArch.x64, universalX64Dir);
+    writer.addBuffer(firstOpenFixScriptName, Buffer.from(universalFirstOpenFixScript(), 'utf8'), {
       mode: 0o100755
     });
   } finally {
@@ -492,6 +578,57 @@ async function listZipNames(zipPath) {
   });
 }
 
+async function listZipEntries(zipPath) {
+  return new Promise((resolve, reject) => {
+    const entries = [];
+    yauzl.open(zipPath, { lazyEntries: true }, (openError, zipFile) => {
+      if (openError) {
+        reject(openError);
+        return;
+      }
+      zipFile.readEntry();
+      zipFile.on('entry', (entry) => {
+        entries.push(entry);
+        zipFile.readEntry();
+      });
+      zipFile.on('end', () => resolve(entries));
+      zipFile.on('error', reject);
+    });
+  });
+}
+
+function machCpuTypes(buffer) {
+  const types = new Set();
+  if (buffer.length < 8) return types;
+
+  const magicLE = buffer.readUInt32LE(0);
+  const magicBE = buffer.readUInt32BE(0);
+  if (magicLE === 0xfeedfacf || magicLE === 0xfeedface) {
+    types.add(buffer.readInt32LE(4));
+  } else if (magicBE === 0xfeedfacf || magicBE === 0xfeedface) {
+    types.add(buffer.readInt32BE(4));
+  } else if (magicBE === 0xcafebabe || magicBE === 0xcafebabf) {
+    const nfatArch = buffer.readUInt32BE(4);
+    const stride = magicBE === 0xcafebabf ? 24 : 20;
+    for (let i = 0; i < nfatArch; i += 1) {
+      const offset = 8 + i * stride;
+      if (offset + 4 <= buffer.length) {
+        types.add(buffer.readInt32BE(offset));
+      }
+    }
+  }
+  return types;
+}
+
+async function verifyExecutableArch(zipPath, executablePath, arch) {
+  const executable = await readZipEntryBuffer(zipPath, executablePath);
+  const expectedCpuType = arch === 'arm64' ? 0x0100000c : 0x01000007;
+  const cpuTypes = machCpuTypes(executable);
+  if (!cpuTypes.has(expectedCpuType)) {
+    throw new Error(`${path.basename(zipPath)} ${executablePath} is not ${arch}`);
+  }
+}
+
 async function verifyMacZip(zipPath, arch) {
   const names = await listZipNames(zipPath);
   const nameSet = new Set(names);
@@ -508,7 +645,7 @@ async function verifyMacZip(zipPath, arch) {
     `${prefix}/Resources/app/node_modules/sharp/package.json`,
     `${prefix}/Resources/app/node_modules/@img/${requiredSharpPackage(arch)}/package.json`,
     `${prefix}/Resources/app/node_modules/@img/${requiredLibvipsPackage(arch)}/package.json`,
-    '首次打开修复.command'
+    firstOpenFixScriptName
   ];
 
   const missing = required.filter((name) => !nameSet.has(name));
@@ -524,10 +661,58 @@ async function verifyMacZip(zipPath, arch) {
     throw new Error(`Mac ${arch} Info.plist metadata mismatch`);
   }
 
-  const executable = await readZipEntryBuffer(zipPath, `${prefix}/MacOS/Electron`);
-  const magic = executable.subarray(0, 4).toString('hex');
-  if (!['cffaedfe', 'feedfacf', 'cafebabe', 'cafebabf'].includes(magic)) {
-    throw new Error(`Mac ${arch} executable does not look like a Mach-O binary`);
+  await verifyExecutableArch(zipPath, `${prefix}/MacOS/Electron`, arch);
+
+  const sizeMb = (fs.statSync(zipPath).size / 1024 / 1024).toFixed(1);
+  console.log(`verified ${path.basename(zipPath)} (${sizeMb} MB)`);
+}
+
+async function verifyUniversalMacZip(zipPath) {
+  const entries = await listZipEntries(zipPath);
+  const names = entries.map((entry) => entry.fileName);
+  const nameSet = new Set(names);
+  const required = [
+    firstOpenFixScriptName,
+    `${universalArmDir}/${productName}.app/Contents/Info.plist`,
+    `${universalArmDir}/${productName}.app/Contents/MacOS/Electron`,
+    `${universalArmDir}/${productName}.app/Contents/Resources/app/dist/index.html`,
+    `${universalArmDir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredSharpPackage('arm64')}/package.json`,
+    `${universalArmDir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredLibvipsPackage('arm64')}/package.json`,
+    `${universalX64Dir}/${productName}.app/Contents/Info.plist`,
+    `${universalX64Dir}/${productName}.app/Contents/MacOS/Electron`,
+    `${universalX64Dir}/${productName}.app/Contents/Resources/app/dist/index.html`,
+    `${universalX64Dir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredSharpPackage('x64')}/package.json`,
+    `${universalX64Dir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredLibvipsPackage('x64')}/package.json`
+  ];
+
+  const missing = required.filter((name) => !nameSet.has(name));
+  if (missing.length > 0) {
+    throw new Error(`Universal Mac zip is missing:\n${missing.join('\n')}`);
+  }
+  if (names.some((name) => name.includes('/node_modules/@img/sharp-win32-'))) {
+    throw new Error('Universal Mac zip contains win32 sharp binaries');
+  }
+
+  const fixEntry = entries.find((entry) => entry.fileName === firstOpenFixScriptName);
+  const fixMode = (fixEntry.externalFileAttributes >>> 16) & 0xffff;
+  if (fixMode !== 0o100755) {
+    throw new Error(`${firstOpenFixScriptName} is not executable in universal zip`);
+  }
+
+  const fixScript = (await readZipEntryBuffer(zipPath, firstOpenFixScriptName)).toString('utf8');
+  for (const requiredText of ['/usr/bin/uname -m', '/usr/bin/xattr -cr', '/usr/bin/open', universalArmDir, universalX64Dir]) {
+    if (!fixScript.includes(requiredText)) {
+      throw new Error(`${firstOpenFixScriptName} is missing ${requiredText}`);
+    }
+  }
+
+  await verifyExecutableArch(zipPath, `${universalArmDir}/${productName}.app/Contents/MacOS/Electron`, 'arm64');
+  await verifyExecutableArch(zipPath, `${universalX64Dir}/${productName}.app/Contents/MacOS/Electron`, 'x64');
+
+  const armInfo = plist.parse((await readZipEntryBuffer(zipPath, `${universalArmDir}/${productName}.app/Contents/Info.plist`)).toString('utf8'));
+  const x64Info = plist.parse((await readZipEntryBuffer(zipPath, `${universalX64Dir}/${productName}.app/Contents/Info.plist`)).toString('utf8'));
+  if (armInfo.CFBundleName !== productName || x64Info.CFBundleName !== productName) {
+    throw new Error('Universal Mac zip Info.plist metadata mismatch');
   }
 
   const sizeMb = (fs.statSync(zipPath).size / 1024 / 1024).toFixed(1);
@@ -546,6 +731,7 @@ async function main() {
   await rm(stagingRoot, { recursive: true, force: true });
   await mkdir(stagingRoot, { recursive: true });
 
+  const zipPathsByArch = {};
   for (const arch of archs) {
     console.log(`packaging mac ${arch} with Electron ${electronVersion}`);
     const electronZip = await downloadArtifact({
@@ -558,7 +744,12 @@ async function main() {
     const appSourceDir = await prepareAppSource(arch);
     const outputPath = await createMacZip(arch, electronZip, appSourceDir, infoPlistBuffer, iconBuffer);
     await verifyMacZip(outputPath, arch);
+    zipPathsByArch[arch] = outputPath;
   }
+
+  const universalOutputPath = await createUniversalMacZip(zipPathsByArch);
+  await verifyUniversalMacZip(universalOutputPath);
+  await Promise.all(archs.map((arch) => rm(zipPathsByArch[arch], { force: true })));
 
   await rm(stagingRoot, { recursive: true, force: true });
 }
