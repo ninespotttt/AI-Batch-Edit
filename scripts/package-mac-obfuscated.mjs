@@ -236,6 +236,8 @@ set -e
 cd "$(dirname "$0")"
 APP="./${productName}.app"
 
+/usr/bin/xattr -cr . 2>/dev/null || true
+
 if [ ! -d "$APP" ]; then
   APP="/Applications/${productName}.app"
 fi
@@ -263,11 +265,15 @@ set -e
 cd "$(dirname "$0")"
 APP_NAME="${productName}.app"
 ARCH="$(/usr/bin/uname -m)"
+ARM_APP="./${universalArmDir}/$APP_NAME"
+INTEL_APP="./${universalX64Dir}/$APP_NAME"
+
+/usr/bin/xattr -cr . 2>/dev/null || true
 
 if [ "$ARCH" = "arm64" ]; then
-  APP="./${universalArmDir}/$APP_NAME"
+  APP="$ARM_APP"
 else
-  APP="./${universalX64Dir}/$APP_NAME"
+  APP="$INTEL_APP"
 fi
 
 if [ ! -d "$APP" ]; then
@@ -277,7 +283,8 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-/usr/bin/xattr -cr "$APP" 2>/dev/null || true
+/usr/bin/xattr -cr "$ARM_APP" 2>/dev/null || true
+/usr/bin/xattr -cr "$INTEL_APP" 2>/dev/null || true
 /usr/bin/open "$APP"
 
 echo "已自动选择并打开适合这台 Mac 的版本。"
@@ -700,7 +707,7 @@ async function verifyUniversalMacZip(zipPath) {
   }
 
   const fixScript = (await readZipEntryBuffer(zipPath, firstOpenFixScriptName)).toString('utf8');
-  for (const requiredText of ['/usr/bin/uname -m', '/usr/bin/xattr -cr', '/usr/bin/open', universalArmDir, universalX64Dir]) {
+  for (const requiredText of ['/usr/bin/uname -m', '/usr/bin/xattr -cr .', '/usr/bin/open', 'ARM_APP', 'INTEL_APP', universalArmDir, universalX64Dir]) {
     if (!fixScript.includes(requiredText)) {
       throw new Error(`${firstOpenFixScriptName} is missing ${requiredText}`);
     }
