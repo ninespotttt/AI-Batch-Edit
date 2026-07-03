@@ -19,6 +19,10 @@ function rememberUploadUrl(key, url) {
     if (oldestKey) uploadUrlCache.delete(oldestKey);
   }
 }
+
+function clearUploadUrlCache() {
+  uploadUrlCache.clear();
+}
 const MODEL_ALIASES = {
   'rhart-image-g-2': 'rhart-image-g-2',
   'gpt2': 'rhart-image-g-2',
@@ -72,7 +76,7 @@ function modelSpec(model) {
   if (base === 'rhart-image-n-pro') {
     return {
       base,
-      endpoint: 'image-to-image',
+      endpoint: 'edit',
       aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'],
       fallbackAspect: '1:1',
       resolutions: ['1k', '2k', '4k'],
@@ -174,15 +178,46 @@ function messageFrom(data) {
   return value ? String(value) : JSON.stringify(data);
 }
 
-function parseError(err) {
-  const msg = err.message || '';
-  const body = err.response?.data ? JSON.stringify(err.response.data).slice(0, 600) : '';
+function errorDetails(err) {
+  const msg = err?.message || '';
+  const body = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 600) : '';
   const full = `${msg} ${body}`.toLowerCase();
-  if (err.response?.status === 401 || full.includes('unauthorized') || full.includes('invalid')) return 'API Key 无效或已过期';
-  if (err.response?.status === 402 || err.response?.status === 403 || full.includes('quota') || full.includes('credit') || full.includes('balance') || full.includes('insufficient')) return '余额不足或权限不足';
-  if (err.response?.status === 429 || full.includes('too many') || full.includes('rate')) return '请求过于频繁，请稍后重试';
+  return { status: err?.response?.status, msg, full };
+}
+
+function isBillingOrPermissionError(err) {
+  const { status, full } = errorDetails(err);
+  return status === 402 ||
+    status === 403 ||
+    full.includes('quota') ||
+    full.includes('credit') ||
+    full.includes('balance') ||
+    full.includes('insufficient') ||
+    full.includes('forbidden') ||
+    full.includes('permission') ||
+    full.includes('余额') ||
+    full.includes('额度') ||
+    full.includes('欠费') ||
+    full.includes('充值') ||
+    full.includes('钱包') ||
+    full.includes('权限') ||
+    full.includes('未开通');
+}
+
+function parseError(err) {
+  const { status, msg, full } = errorDetails(err);
+  if (status === 401 || full.includes('unauthorized') || full.includes('invalid')) return 'API Key 无效或已过期';
+  if (isBillingOrPermissionError(err)) return '余额不足或权限不足';
+  if (status === 429 || full.includes('too many') || full.includes('rate')) return '请求过于频繁，请稍后重试';
   if (full.includes('timeout') || full.includes('etimedout') || full.includes('econnreset')) return '请求超时，请稍后重试';
   return `生成失败: ${msg.slice(0, 120)}`;
+}
+
+function normalizeRunningHubError(err) {
+  if (isBillingOrPermissionError(err)) {
+    clearUploadUrlCache();
+  }
+  return parseError(err);
 }
 
 class RunningHubClient {
@@ -349,7 +384,7 @@ async function generateRunningHubImage(options) {
     const client = new RunningHubClient(options);
     return await client.generate(options);
   } catch (err) {
-    throw new Error(parseError(err));
+    throw new Error(normalizeRunningHubError(err));
   }
 }
 
@@ -358,7 +393,7 @@ async function startRunningHubImageTask(options) {
     const client = new RunningHubClient(options);
     return await client.createTask(options);
   } catch (err) {
-    throw new Error(parseError(err));
+    throw new Error(normalizeRunningHubError(err));
   }
 }
 
@@ -367,7 +402,7 @@ async function awaitRunningHubImageTask(options) {
     const client = new RunningHubClient(options);
     return await client.fetchResult(options.taskId);
   } catch (err) {
-    throw new Error(parseError(err));
+    throw new Error(normalizeRunningHubError(err));
   }
 }
 

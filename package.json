@@ -24,7 +24,7 @@
     "@vitejs/plugin-vue": "^5.2.4",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
-    "electron": "^35.2.0",
+    "electron": "^35.7.5",
     "electron-builder": "^26.0.12",
     "javascript-obfuscator": "^4.2.2",
     "lucide-vue-next": "^0.468.0",
@@ -43,7 +43,7 @@
       "src/main/**/*",
       "build/icon.ico",
       "notice.json",
-      "密钥注册教程.pdf",
+      "使用和密钥注册教程.pdf",
       "微信.png",
       "公众号logo.jpg",
       "logo.jpg",
@@ -51,8 +51,8 @@
     ],
     "extraFiles": [
       {
-        "from": "密钥注册教程.pdf",
-        "to": "密钥注册教程.pdf"
+        "from": "使用和密钥注册教程.pdf",
+        "to": "使用和密钥注册教程.pdf"
       },
       {
         "from": "微信.png",

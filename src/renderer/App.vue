@@ -580,7 +580,7 @@ async function bootstrapInitialState() {
     showPricingNotice.value = !config.pricingNoticeAccepted;
     showOnboarding.value = !showPricingNotice.value && !config.onboardingCompleted;
     if (showOnboarding.value) onboardingShownAt.value = Date.now();
-    activeNotice.value = config.cachedNotice && typeof config.cachedNotice === 'object' ? config.cachedNotice : null;
+    activeNotice.value = null;
     void loadHistory();
     void checkNotice();
   } finally {
@@ -611,6 +611,17 @@ function stringifySafe(value) {
   return JSON.stringify(value);
 }
 
+function createRunOptions() {
+  return {
+    provider: config.provider,
+    prompt: prompt.value,
+    aspectRatio: params.aspectRatio,
+    resolution: params.resolution,
+    model: config.runninghubModel,
+    simulateFailures: config.simulateFailures
+  };
+}
+
 function toPlainTask(task) {
   return {
     id: task.id,
@@ -619,6 +630,7 @@ function toPlainTask(task) {
     image2Index: task.image2Index,
     image1Path: task.image1Path,
     image2Path: task.image2Path,
+    batchDir: task.batchDir,
     outputName: task.outputName,
     outputPath: task.outputPath,
     outputUrl: task.outputUrl,
@@ -626,7 +638,8 @@ function toPlainTask(task) {
     status: task.status,
     statusMessage: task.statusMessage,
     startedAt: task.startedAt,
-    finishedAt: task.finishedAt
+    finishedAt: task.finishedAt,
+    runOptions: task.runOptions
   };
 }
 
@@ -638,6 +651,7 @@ function toManifestTask(task) {
     image2Index: task.image2Index,
     image1Path: task.image1Path,
     image2Path: task.image2Path,
+    batchDir: task.batchDir,
     outputName: task.outputName,
     outputPath: task.outputPath,
     outputUrl: task.outputUrl,
@@ -645,7 +659,8 @@ function toManifestTask(task) {
     status: task.status,
     statusMessage: task.statusMessage,
     startedAt: task.startedAt,
-    finishedAt: task.finishedAt
+    finishedAt: task.finishedAt,
+    runOptions: task.runOptions
   };
 }
 
@@ -684,7 +699,7 @@ function openNoticeLink() {
 
 async function dismissActiveNotice() {
   if (!activeNotice.value?.id) return;
-  await window.batchApi.dismissNotice(activeNotice.value.id);
+  await window.batchApi.dismissNotice(activeNotice.value.dismissKey || activeNotice.value.id);
   activeNotice.value = null;
 }
 
@@ -753,19 +768,22 @@ async function beginGeneration() {
   try {
     config.promptHistory = addPromptToHistory(config.promptHistory, prompt.value);
     await saveConfig();
-    activeCount.value = 0;
-    launchCount.value = 0;
-    lastLaunchAt.value = 0;
-    tasks.value = buildTasks();
+    const runOptions = createRunOptions();
+    const newTasks = buildTasks(tasks.value.length, runOptions);
     const batch = await window.batchApi.createBatch(stringifySafe({
       outputRoot: config.outputRoot,
-      prompt: prompt.value,
-      params: { ...params, provider: config.provider, model: config.runninghubModel },
-      tasks: tasks.value.map(toManifestTask)
+      prompt: runOptions.prompt,
+      params: {
+        aspectRatio: runOptions.aspectRatio,
+        resolution: runOptions.resolution,
+        provider: runOptions.provider,
+        model: runOptions.model
+      },
+      tasks: newTasks.map(toManifestTask)
     }));
-    if (Array.isArray(batch.tasks) && batch.tasks.length === tasks.value.length) {
-      tasks.value = batch.tasks;
-    }
+    const reservedTasks = Array.isArray(batch.tasks) && batch.tasks.length === newTasks.length ? batch.tasks : newTasks;
+    const appendedTasks = reservedTasks.map((task) => ({ ...task, batchDir: batch.batchDir }));
+    tasks.value = [...tasks.value, ...appendedTasks];
     batchDir.value = batch.batchDir;
     activeTab.value = 'generation';
     scheduleQueue();
@@ -775,8 +793,8 @@ async function beginGeneration() {
   }
 }
 
-function buildTasks() {
-  const next = []; let index = 0;
+function buildTasks(startIndex = 0, runOptions = createRunOptions()) {
+  const next = []; let index = startIndex;
   imageSetA.value.forEach((a, image1Index) => {
     const targets = imageSetB.value.length > 0 ? imageSetB.value : [null];
     targets.forEach((b, image2Index) => {
@@ -787,6 +805,7 @@ function buildTasks() {
         image2Index: b ? image2Index : -1,
         image1Path: a.path,
         image2Path: b?.path || '',
+        batchDir: '',
         outputName: '',
         outputPath: '',
         outputUrl: '',
@@ -794,12 +813,35 @@ function buildTasks() {
         status: 'queued',
         statusMessage: '等待中',
         startedAt: '',
-        finishedAt: ''
+        finishedAt: '',
+        runOptions
       });
       index += 1;
     });
   });
   return next;
+}
+
+function buildRetryTask(sourceTask, index) {
+  const runOptions = sourceTask.runOptions || createRunOptions();
+  return {
+    id: `retry-${sourceTask.image1Index}-${sourceTask.image2Index}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    index,
+    image1Index: sourceTask.image1Index,
+    image2Index: sourceTask.image2Index,
+    image1Path: sourceTask.image1Path,
+    image2Path: sourceTask.image2Path || '',
+    batchDir: '',
+    outputName: '',
+    outputPath: '',
+    outputUrl: '',
+    remoteTaskId: '',
+    status: 'queued',
+    statusMessage: '等待中',
+    startedAt: '',
+    finishedAt: '',
+    runOptions
+  };
 }
 
 function scheduleQueue() {
@@ -824,6 +866,7 @@ function scheduleQueue() {
 }
 
 async function runTask(task) {
+  const taskBatchDir = task.batchDir || batchDir.value;
   launchCount.value += 1;
   lastLaunchAt.value = Date.now();
   activeCount.value += 1;
@@ -834,20 +877,14 @@ async function runTask(task) {
   task.outputPath = '';
   task.outputUrl = '';
   task.remoteTaskId = '';
-  void writeCurrentManifest();
+  void writeCurrentManifest(taskBatchDir);
 
   try {
+    const runOptions = task.runOptions || createRunOptions();
     const result = await window.batchApi.runTask(stringifySafe({
-      batchDir: batchDir.value,
+      batchDir: taskBatchDir,
       task: toPlainTask(task),
-      options: {
-        provider: config.provider,
-        prompt: prompt.value,
-        aspectRatio: params.aspectRatio,
-        resolution: params.resolution,
-        model: config.runninghubModel,
-        simulateFailures: config.simulateFailures
-      }
+      options: runOptions
     }));
     task.status = 'success';
     task.statusMessage = '完成';
@@ -861,24 +898,53 @@ async function runTask(task) {
   } finally {
     task.finishedAt = new Date().toISOString();
     activeCount.value -= 1;
-    await writeCurrentManifest();
+    await writeCurrentManifest(taskBatchDir);
     scheduleQueue();
   }
 }
 
-function retryTask(task) {
-  task.status = 'queued';
-  task.statusMessage = '等待重新生成';
-  task.outputPath = '';
-  task.outputUrl = '';
-  task.remoteTaskId = '';
-  task.startedAt = '';
-  task.finishedAt = '';
-  scheduleQueue();
+async function retryTask(task) {
+  await replaceFailedTasks([task]);
 }
 
-function retryFailed() {
-  tasks.value.filter((task) => task.status === 'failed').forEach(retryTask);
+async function retryFailed() {
+  await replaceFailedTasks(tasks.value.filter((task) => task.status === 'failed'));
+}
+
+async function replaceFailedTasks(sourceTasks) {
+  const failedTasks = sourceTasks.filter((task) => task?.status === 'failed');
+  if (failedTasks.length === 0) return;
+  const validationMessage = getLaunchValidationMessage();
+  if (validationMessage) {
+    applyLaunchValidationMessage(validationMessage);
+    return;
+  }
+  const nextIndex = Math.max(0, ...tasks.value.map((task) => Number(task.index) || 0)) + 1;
+  const retryTasks = failedTasks.map((task, offset) => buildRetryTask(task, nextIndex + offset));
+  try {
+    const batch = await window.batchApi.createBatch(stringifySafe({
+      outputRoot: config.outputRoot,
+      prompt: retryTasks[0]?.runOptions?.prompt || prompt.value,
+      params: {
+        aspectRatio: retryTasks[0]?.runOptions?.aspectRatio || params.aspectRatio,
+        resolution: retryTasks[0]?.runOptions?.resolution || params.resolution,
+        provider: retryTasks[0]?.runOptions?.provider || config.provider,
+        model: retryTasks[0]?.runOptions?.model || config.runninghubModel
+      },
+      tasks: retryTasks.map(toManifestTask)
+    }));
+    const reservedTasks = Array.isArray(batch.tasks) && batch.tasks.length === retryTasks.length ? batch.tasks : retryTasks;
+    const appendedTasks = reservedTasks.map((task) => ({ ...task, batchDir: batch.batchDir }));
+    const replacedIds = new Set(failedTasks.map((task) => task.id));
+    const affectedDirs = [...new Set(failedTasks.map((task) => task.batchDir || batchDir.value).filter(Boolean))];
+    tasks.value = [...tasks.value.filter((task) => !replacedIds.has(task.id)), ...appendedTasks];
+    batchDir.value = batch.batchDir;
+    activeTab.value = 'generation';
+    await Promise.all(affectedDirs.map((dir) => writeCurrentManifest(dir, true)));
+    scheduleQueue();
+  } catch (error) {
+    showOperationNotice(error?.message || '重新生成失败，请稍后重试');
+  }
 }
 
 async function deleteSelectedTasks(selectionKeys) {
@@ -907,6 +973,7 @@ async function performDeleteSelected(selectionKeys) {
   const runningTasks = selectedTasks.filter((task) => task.status === 'running');
   const removableTasks = selectedTasks.filter((task) => task.status !== 'running');
   const removableTaskIds = new Set(removableTasks.map((task) => task.id));
+  const affectedDirs = [...new Set(removableTasks.map((task) => task.batchDir || batchDir.value).filter(Boolean))];
   const taskOutputPaths = removableTasks.map((task) => task.outputPath).filter(Boolean);
   const selectedHistoryPaths = historyItems.value.filter((item) => keys.has(`history:${item.path}`)).map((item) => item.path);
   const filesToDelete = [...new Set([...taskOutputPaths, ...selectedHistoryPaths])];
@@ -922,28 +989,40 @@ async function performDeleteSelected(selectionKeys) {
 
   if (removableTaskIds.size > 0) {
     tasks.value = tasks.value.filter((task) => !removableTaskIds.has(task.id));
-    await writeCurrentManifest();
+    await Promise.all(affectedDirs.map((dir) => writeCurrentManifest(dir, true)));
   }
 
   await loadHistory();
   const retainedText = runningTasks.length ? `，${runningTasks.length} 张生成中已保留` : '';
   showOperationNotice(`已删除 ${removableTasks.length + selectedHistoryPaths.length} 张图片${retainedText}。`, 'success');
 }
-async function writeCurrentManifest() {
-  if (!batchDir.value) return;
-  await window.batchApi.writeManifest(stringifySafe({
-    batchDir: batchDir.value,
-    manifest: {
-      updatedAt: new Date().toISOString(),
-      prompt: prompt.value,
-      params: { ...params, provider: config.provider, model: config.runninghubModel },
-      summary: {
-        total: tasks.value.length,
-        success: successCount.value,
-        failed: failedCount.value
-      },
-      tasks: tasks.value.map(toManifestTask)
-    }
-  }));
+async function writeCurrentManifest(targetBatchDir = '', replaceTasks = false) {
+  const dirs = targetBatchDir
+    ? [targetBatchDir]
+    : [...new Set(tasks.value.map((task) => task.batchDir || batchDir.value).filter(Boolean))];
+  for (const dir of dirs) {
+    const batchTasks = tasks.value.filter((task) => (task.batchDir || batchDir.value) === dir);
+    if (batchTasks.length === 0 && !replaceTasks) continue;
+    await window.batchApi.writeManifest(stringifySafe({
+      batchDir: dir,
+      manifest: {
+        replaceTasks,
+        updatedAt: new Date().toISOString(),
+        prompt: batchTasks[0]?.runOptions?.prompt || prompt.value,
+        params: {
+          aspectRatio: batchTasks[0]?.runOptions?.aspectRatio || params.aspectRatio,
+          resolution: batchTasks[0]?.runOptions?.resolution || params.resolution,
+          provider: batchTasks[0]?.runOptions?.provider || config.provider,
+          model: batchTasks[0]?.runOptions?.model || config.runninghubModel
+        },
+        summary: {
+          total: batchTasks.length,
+          success: batchTasks.filter((task) => task.status === 'success').length,
+          failed: batchTasks.filter((task) => task.status === 'failed').length
+        },
+        tasks: batchTasks.map(toManifestTask)
+      }
+    }));
+  }
 }
 </script>

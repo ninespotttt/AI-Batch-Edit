@@ -11,7 +11,7 @@ const protectedRoot = path.join(root, 'protected-main');
 const protectedDistDir = path.join(protectedRoot, 'dist');
 const protectedSrcDir = path.join(protectedRoot, 'src', 'main');
 const protectedStaticFiles = [
-  '密钥注册教程.pdf',
+  '使用和密钥注册教程.pdf',
   '微信.png',
   '公众号logo.jpg',
   'logo.jpg'

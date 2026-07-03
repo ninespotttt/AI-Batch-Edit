@@ -204,7 +204,14 @@ function saveConfig(nextConfig) {
 
 function fetchJson(url, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { timeout: timeoutMs }, (response) => {
+    const request = https.get(url, {
+      timeout: timeoutMs,
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
+      }
+    }, (response) => {
       if (response.statusCode !== 200) {
         response.resume();
         reject(new Error(`通知读取失败：${response.statusCode}`));
@@ -232,7 +239,7 @@ function fetchJson(url, timeoutMs = 5000) {
 function normalizeNotice(raw) {
   if (!raw || raw.enabled === false || !raw.id || !raw.title || !raw.message) return null;
   const type = String(raw.type || 'info').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'info';
-  return {
+  const notice = {
     id: String(raw.id).slice(0, 120),
     type,
     title: String(raw.title).slice(0, 80),
@@ -241,6 +248,34 @@ function normalizeNotice(raw) {
     buttonUrl: raw.buttonUrl ? String(raw.buttonUrl) : '',
     force: Boolean(raw.force)
   };
+  notice.dismissKey = noticeDismissKey(notice);
+  return notice;
+}
+
+function noticeDismissKey(notice) {
+  const source = [
+    notice.id,
+    notice.type,
+    notice.title,
+    notice.message,
+    notice.buttonText,
+    notice.buttonUrl,
+    notice.force ? 'force' : ''
+  ].join('\n');
+  const digest = crypto.createHash('sha1').update(source).digest('hex').slice(0, 12);
+  return `${notice.id}:${digest}`;
+}
+
+function noticeFetchUrl() {
+  const url = new URL(NOTICE_URL);
+  url.searchParams.set('_', String(Date.now()));
+  return url.toString();
+}
+
+function isNoticeDismissed(config, notice) {
+  const dismissedNoticeIds = Array.isArray(config?.dismissedNoticeIds) ? config.dismissedNoticeIds : [];
+  if (dismissedNoticeIds.includes(notice.dismissKey)) return true;
+  return false;
 }
 
 function readBundledNotice() {
@@ -256,10 +291,7 @@ function readBundledNotice() {
 function resolveNoticeFromConfig(config) {
   const cachedNotice = normalizeNotice(config?.cachedNotice);
   if (!cachedNotice) return null;
-  if (Array.isArray(config?.dismissedNoticeIds) && config.dismissedNoticeIds.includes(cachedNotice.id)) {
-    return null;
-  }
-  return cachedNotice;
+  return isNoticeDismissed(config, cachedNotice) ? null : cachedNotice;
 }
 
 function isAllowedExternalUrl(url) {
@@ -608,7 +640,7 @@ async function runGenerationAdapter(task, options) {
     image1Path: task.image1Path,
     image2Path: task.image2Path,
     prompt: options.prompt || '',
-    model: canonicalModel(config.runninghubModel),
+    model: canonicalModel(options.model || config.runninghubModel),
     aspectRatio: options.aspectRatio || '1:1',
     resolution: options.resolution || '2K'
   });
@@ -786,7 +818,7 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
     image1Path: runTaskData.image1Path,
     image2Path: runTaskData.image2Path,
     prompt: options?.prompt || '',
-    model: canonicalModel(config.runninghubModel),
+    model: canonicalModel(options?.model || config.runninghubModel),
     aspectRatio: options?.aspectRatio || '1:1',
     resolution: options?.resolution || '2K'
   });
@@ -813,10 +845,13 @@ ipcMain.handle('manifest:write', (_event, payload) => {
   const { batchDir, manifest } = unpackPayload(payload);
   if (!batchDir || !manifest) throw new Error('manifest 参数不完整');
   const existingManifest = readManifest(batchDir);
+  const replaceTasks = manifest.replaceTasks === true;
+  const { replaceTasks: _replaceTasks, ...manifestBody } = manifest;
+  const incomingTasks = Array.isArray(manifest.tasks) ? manifest.tasks : [];
   const nextManifest = {
     ...(existingManifest && typeof existingManifest === 'object' ? existingManifest : {}),
-    ...manifest,
-    tasks: mergeManifestTasks(existingManifest?.tasks, Array.isArray(manifest.tasks) ? manifest.tasks : []),
+    ...manifestBody,
+    tasks: replaceTasks ? incomingTasks : mergeManifestTasks(existingManifest?.tasks, incomingTasks),
     updatedAt: new Date().toISOString()
   };
   writeManifest(batchDir, nextManifest);
@@ -849,11 +884,11 @@ ipcMain.handle('notice:check', async () => {
   const config = loadConfig();
   const cachedNotice = resolveNoticeFromConfig(config);
   try {
-    const notice = normalizeNotice(await fetchJson(NOTICE_URL));
+    const notice = normalizeNotice(await fetchJson(noticeFetchUrl()));
     if (notice) {
+      const dismissed = isNoticeDismissed(config, notice);
       saveConfig({ cachedNotice: notice, cachedNoticeUpdatedAt: new Date().toISOString() });
-      if (config.dismissedNoticeIds.includes(notice.id)) return null;
-      return notice;
+      return dismissed ? null : notice;
     }
     if (cachedNotice) return cachedNotice;
     return resolveNoticeFromConfig({ dismissedNoticeIds: config.dismissedNoticeIds, cachedNotice: readBundledNotice() });

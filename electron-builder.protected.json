@@ -10,7 +10,7 @@
     "src/main/**/*",
     "build/icon.ico",
     "notice.json",
-    "密钥注册教程.pdf",
+    "使用和密钥注册教程.pdf",
     "微信.png",
     "公众号logo.jpg",
     "logo.jpg",
@@ -18,8 +18,8 @@
   ],
   "extraFiles": [
     {
-      "from": "密钥注册教程.pdf",
-      "to": "密钥注册教程.pdf"
+      "from": "使用和密钥注册教程.pdf",
+      "to": "使用和密钥注册教程.pdf"
     },
     {
       "from": "微信.png",
