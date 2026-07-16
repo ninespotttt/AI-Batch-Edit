@@ -60,8 +60,8 @@
             <label>并发数量</label>
             <strong>{{ config.concurrency }}</strong>
           </div>
-          <input class="range-input" v-model.number="config.concurrency" type="range" min="1" max="100" />
-          <p class="field-help">现在可以拉到 100。前端会先把任务快速排好，后端再按节奏慢慢出队，减少卡顿和爆接口。</p>
+              <input class="range-input" v-model.number="config.concurrency" type="range" min="1" max="100" />
+          <p class="field-help">可以拉到 100。遇到余额、Key 或权限问题时，队列会自动暂停，避免重复提交。</p>
         </div>
       </section>
 

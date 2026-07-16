@@ -1,18 +1,18 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } = require('electron');
 const fs = require('fs');
 const https = require('https');
 const crypto = require('crypto');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const sharp = require('sharp');
-const { awaitRunningHubImageTask, canonicalModel, generateRunningHubImage, startRunningHubImageTask } = require('./runninghub.cjs');
+const { RUNNINGHUB_API_BASE_URL, awaitRunningHubImageTask, canonicalModel, generateRunningHubImage, startRunningHubImageTask } = require('./runninghub.cjs');
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
-const NOTICE_URL = 'https://raw.githubusercontent.com/ninespotttt/AI-Batch-Edit/main/notice.json';
+const NOTICE_URL = 'https://api.github.com/repos/ninespotttt/AI-Batch-Edit/contents/notice.json?ref=main';
 const PREVIEW_CACHE_VERSION = 'v5';
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const ALLOWED_EXTERNAL_URLS = [
-  /^https:\/\/www\.runninghub\.cn\//,
+  /^https:\/\/www\.runninghub\.ai(?:\/|\?|$)/,
   /^https:\/\/www\.douyin\.com\/user\//,
   /^https:\/\/github\.com\/ninespotttt\/AI-Batch-Edit(?:\/|$)/
 ];
@@ -52,7 +52,7 @@ function defaultConfig() {
     outputRoot: defaultOutputRoot(),
     provider: 'runninghub',
     runninghubApiKey: '',
-    runninghubBaseUrl: 'https://www.runninghub.cn',
+    runninghubBaseUrl: RUNNINGHUB_API_BASE_URL,
     runninghubModel: 'rhart-image-n-g31-flash',
     openaiBaseUrl: '',
     openaiApiKey: '',
@@ -93,6 +93,16 @@ function normalizeOutputRoot(outputRoot) {
     return fallbackOutputRoot;
   }
   return normalized;
+}
+
+function normalizeRunningHubBaseUrl(baseUrl) {
+  const value = String(baseUrl || '').trim().replace(/\/$/, '');
+  if (!value) return RUNNINGHUB_API_BASE_URL;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    if (hostname.includes('runninghub') && hostname.endsWith('.cn')) return RUNNINGHUB_API_BASE_URL;
+  } catch {}
+  return value;
 }
 
 function isIntegerKeyObject(value) {
@@ -163,7 +173,9 @@ function loadConfig() {
     const stored = parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value) ? parsed.value : {};
   const config = { ...defaultConfig(), ...stored };
   const originalOutputRoot = config.outputRoot;
+  const originalRunningHubBaseUrl = config.runninghubBaseUrl;
   config.outputRoot = normalizeOutputRoot(config.outputRoot);
+  config.runninghubBaseUrl = normalizeRunningHubBaseUrl(config.runninghubBaseUrl);
   config.dismissedNoticeIds = Array.isArray(config.dismissedNoticeIds) ? config.dismissedNoticeIds : [];
   config.promptHistory = normalizePromptHistory(config.promptHistory);
   config.cachedNotice = config.cachedNotice && typeof config.cachedNotice === 'object' && !Array.isArray(config.cachedNotice) ? config.cachedNotice : null;
@@ -175,7 +187,7 @@ function loadConfig() {
     };
     if (!next.aspectRatio) next.aspectRatio = '3:4';
     if (!next.resolution) next.resolution = '2K';
-    if (parsed.repaired || config.outputRoot !== originalOutputRoot) {
+    if (parsed.repaired || config.outputRoot !== originalOutputRoot || config.runninghubBaseUrl !== originalRunningHubBaseUrl) {
       fs.writeFileSync(configPath(), JSON.stringify(next, null, 2), 'utf8');
     }
     return next;
@@ -194,6 +206,7 @@ function saveConfig(nextConfig) {
   };
   merged.runninghubModel = canonicalModel(merged.runninghubModel);
   merged.outputRoot = normalizeOutputRoot(merged.outputRoot);
+  merged.runninghubBaseUrl = normalizeRunningHubBaseUrl(merged.runninghubBaseUrl);
   merged.dismissedNoticeIds = Array.isArray(merged.dismissedNoticeIds) ? merged.dismissedNoticeIds : [];
   merged.promptHistory = normalizePromptHistory(merged.promptHistory);
   merged.cachedNotice = merged.cachedNotice && typeof merged.cachedNotice === 'object' && !Array.isArray(merged.cachedNotice) ? merged.cachedNotice : null;
@@ -209,7 +222,8 @@ function fetchJson(url, timeoutMs = 5000) {
       headers: {
         Accept: 'application/json',
         'Cache-Control': 'no-cache',
-        Pragma: 'no-cache'
+        Pragma: 'no-cache',
+        'User-Agent': 'Universal-AI-Batch-Editor'
       }
     }, (response) => {
       if (response.statusCode !== 200) {
@@ -224,7 +238,12 @@ function fetchJson(url, timeoutMs = 5000) {
       });
       response.on('end', () => {
         try {
-          resolve(JSON.parse(body));
+          const payload = JSON.parse(body);
+          if (payload?.encoding === 'base64' && typeof payload.content === 'string') {
+            resolve(JSON.parse(Buffer.from(payload.content, 'base64').toString('utf8')));
+            return;
+          }
+          resolve(payload);
         } catch {
           reject(new Error('通知内容不是有效 JSON'));
         }
@@ -413,10 +432,10 @@ function updateManifestTask(batchDir, taskId, updater) {
   const manifest = readManifest(batchDir);
   if (!manifest || !Array.isArray(manifest.tasks)) return null;
   const index = manifest.tasks.findIndex((task) => task.id === taskId);
-  if (index < 0) return null;
-  const currentTask = manifest.tasks[index] || {};
+  const currentTask = index >= 0 ? (manifest.tasks[index] || {}) : {};
   const nextTask = typeof updater === 'function' ? updater({ ...currentTask }) : { ...currentTask, ...updater };
-  manifest.tasks[index] = nextTask;
+  if (index >= 0) manifest.tasks[index] = nextTask;
+  else manifest.tasks.push(nextTask);
   manifest.updatedAt = new Date().toISOString();
   writeManifest(batchDir, manifest);
   return nextTask;
@@ -862,6 +881,36 @@ ipcMain.handle('history:list', (_event, payload) => {
   return listHistory(payload?.outputRoot, payload?.limit);
 });
 
+ipcMain.handle('tasks:listPending', (_event, payload) => {
+  const root = payload?.outputRoot || loadConfig().outputRoot || defaultConfig().outputRoot;
+  const pendingTasks = collectBatchDirs(root).flatMap((batchDir) => {
+    const manifest = readManifest(batchDir);
+    const tasks = Array.isArray(manifest?.tasks) ? manifest.tasks : [];
+    return tasks
+      .filter((task) => ['queued', 'running'].includes(task?.status) && !task?.outputPath)
+      .map((task) => ({ ...task, batchDir, createdAt: task.createdAt || manifest?.createdAt || '' }));
+  });
+  return pendingTasks.sort((a, b) => {
+    const aTime = Date.parse(a.createdAt || a.startedAt || '') || 0;
+    const bTime = Date.parse(b.createdAt || b.startedAt || '') || 0;
+    return aTime - bTime || (Number(a.index) || 0) - (Number(b.index) || 0);
+  });
+});
+
+ipcMain.handle('tasks:resumePending', (_event, payload) => {
+  const config = loadConfig();
+  if (!config.runninghubApiKey) throw new Error('请先在设置中填写 RunningHub API Key');
+  const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+  let resumed = 0;
+  for (const task of tasks) {
+    if (task?.status === 'running' && task.remoteTaskId && task.batchDir) {
+      void resumeManifestTask(task.batchDir, task, config);
+      resumed += 1;
+    }
+  }
+  return resumed;
+});
+
 ipcMain.handle('files:delete', (_event, payload) => {
   const paths = Array.isArray(payload) ? payload : [];
   const removed = [];
@@ -878,6 +927,85 @@ ipcMain.handle('files:delete', (_event, payload) => {
     }
   }
   return removed;
+});
+
+async function saveImageFile(sourcePath, suggestedName) {
+  if (!sourcePath || !isImage(sourcePath) || !fs.existsSync(sourcePath)) {
+    throw new Error('图片文件不存在');
+  }
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: '保存图片',
+    defaultPath: String(suggestedName || path.basename(sourcePath)),
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+  });
+  if (result.canceled || !result.filePath) return false;
+  fs.copyFileSync(sourcePath, result.filePath);
+  return true;
+}
+
+function copyImageToClipboard(sourcePath) {
+  const filePath = String(sourcePath || '');
+  if (!filePath || !isImage(filePath) || !fs.existsSync(filePath)) {
+    throw new Error('图片文件不存在');
+  }
+  const image = nativeImage.createFromPath(filePath);
+  if (image.isEmpty()) throw new Error('无法读取图片文件');
+  clipboard.writeImage(image);
+  return true;
+}
+
+function sendImageActionResult(sender, sourcePath, message) {
+  if (!sender || sender.isDestroyed()) return;
+  sender.send('image:action-result', { sourcePath, message });
+}
+
+ipcMain.handle('images:download', (_event, payload) => {
+  return saveImageFile(String(payload?.sourcePath || ''), payload?.name);
+});
+
+ipcMain.handle('images:copy', (_event, sourcePath) => {
+  return copyImageToClipboard(sourcePath);
+});
+
+ipcMain.handle('images:contextMenu', (event, payload) => {
+  const sourcePath = String(payload?.sourcePath || '');
+  if (!sourcePath || !isImage(sourcePath) || !fs.existsSync(sourcePath)) {
+    throw new Error('图片文件不存在');
+  }
+  const menu = Menu.buildFromTemplate([
+    {
+      label: '复制图片',
+      click: () => {
+        try {
+          copyImageToClipboard(sourcePath);
+          sendImageActionResult(event.sender, sourcePath, '图片已复制');
+        } catch (error) {
+          sendImageActionResult(event.sender, sourcePath, error?.message || '图片复制失败');
+        }
+      }
+    },
+    {
+      label: '另存为...',
+      click: async () => {
+        try {
+          const saved = await saveImageFile(sourcePath, payload?.name);
+          if (saved) sendImageActionResult(event.sender, sourcePath, '图片已保存');
+        } catch (error) {
+          sendImageActionResult(event.sender, sourcePath, error?.message || '图片保存失败');
+        }
+      }
+    }
+  ]);
+  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) || mainWindow });
+  return true;
+});
+
+ipcMain.handle('manifest:updateTask', (_event, payload) => {
+  const { batchDir, taskId, task } = unpackPayload(payload);
+  if (!batchDir || !taskId || !task) throw new Error('任务 manifest 参数不完整');
+  const updated = updateManifestTask(batchDir, taskId, task);
+  if (!updated) throw new Error('任务 manifest 不存在或任务已被删除');
+  return updated;
 });
 
 ipcMain.handle('notice:check', async () => {

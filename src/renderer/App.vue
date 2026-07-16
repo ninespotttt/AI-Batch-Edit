@@ -20,6 +20,13 @@
       </button>
     </div>
 
+    <div v-if="pendingRecoveryTasks.length && !recoveryBannerHidden" class="recovery-banner" role="status">
+      <AlertCircle :size="17" />
+      <span>发现 {{ pendingRecoveryTasks.length }} 个未完成任务。已运行任务会继续查询，排队任务不会自动提交。</span>
+      <button class="primary compact" type="button" @click="restorePendingTasks">恢复排队任务</button>
+      <button class="icon-btn" type="button" title="稍后处理" @click="recoveryBannerHidden = true"><X :size="14" /></button>
+    </div>
+
     <WorkspaceSection
       v-show="activeTab === 'workspace'"
       v-model:image-set-a="imageSetA"
@@ -56,11 +63,15 @@
       :completed-count="completedCount"
       :success-count="successCount"
       :failed-count="failedCount"
+      :queue-paused="queuePaused"
+      :queued-count="queuedCount"
       @retry-failed="retryFailed"
       @open-batch-dir="openBatchDir"
       @retry-task="retryTask"
       @change-page="changeHistoryPage"
       @delete-selected="deleteSelectedTasks"
+      @toggle-queue="toggleQueue"
+      @cancel-queued="cancelQueuedTasks"
     />
 
     <SettingsSection
@@ -288,11 +299,12 @@ const MODEL_OPTIONS = [
 ];
 
 const LOW_COST_MODELS = new Set(MODEL_OPTIONS.map((model) => model.value));
-const runninghubApiKeyUrl = 'https://www.runninghub.cn/?inviteCode=1bcdcd69';
+const RUNNINGHUB_API_BASE_URL = 'https://www.runninghub.ai';
+const runninghubApiKeyUrl = 'https://www.runninghub.ai?inviteCode=wtfdbtbd';
 const douyinProfileUrl = 'https://www.douyin.com/user/MS4wLjABAAAAr9s0VYTHZPHXq1luRX-Gw1XgwVYeIaYc5anWLxeAmrGRC79UwhB5iBcTA6AjmE01';
 const DEFAULT_CONCURRENCY = 100;
 const MAX_CONCURRENCY = 100;
-const QUEUE_LAUNCH_INTERVAL_MS = 500;
+const QUEUE_LAUNCH_INTERVAL_MS = 120;
 
 const activeTab = ref('workspace');
 const imageSetA = ref([]);
@@ -308,6 +320,9 @@ const historyItems = ref([]);
 const historyPage = ref(1);
 const historyPageSize = ref(50);
 const tasks = ref([]);
+const queuePaused = ref(false);
+const pendingRecoveryTasks = ref([]);
+const recoveryBannerHidden = ref(false);
 const batchDir = ref('');
 const activeCount = ref(0);
 const launchCount = ref(0);
@@ -332,7 +347,7 @@ const config = reactive({
   outputRoot: '',
   provider: 'mock',
   runninghubApiKey: '',
-  runninghubBaseUrl: 'https://www.runninghub.cn',
+  runninghubBaseUrl: RUNNINGHUB_API_BASE_URL,
   runninghubModel: 'rhart-image-n-g31-flash',
   openaiBaseUrl: '',
   openaiApiKey: '',
@@ -359,7 +374,7 @@ const launchReadinessText = computed(() => {
   if (!hasRunningHubApiKey()) return '先到设置区域填写 RunningHub API Key';
   return '';
 });
-const completedCount = computed(() => tasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
+const completedCount = computed(() => tasks.value.filter((task) => ['success', 'failed', 'cancelled'].includes(task.status)).length);
 const successCount = computed(() => tasks.value.filter((task) => task.status === 'success').length);
 const failedCount = computed(() => tasks.value.filter((task) => task.status === 'failed').length);
 const statusText = computed(() => {
@@ -581,11 +596,34 @@ async function bootstrapInitialState() {
     showOnboarding.value = !showPricingNotice.value && !config.onboardingCompleted;
     if (showOnboarding.value) onboardingShownAt.value = Date.now();
     activeNotice.value = null;
-    void loadHistory();
-    void checkNotice();
+      void loadHistory();
+      pendingRecoveryTasks.value = await window.batchApi.listPendingTasks?.({ outputRoot: config.outputRoot }) || [];
+      void checkNotice();
   } finally {
     void window.batchApi.bootMark?.('app-mounted-end');
   }
+}
+
+function restorePendingTasks() {
+  if (!hasRunningHubApiKey()) {
+    applyLaunchValidationMessage('请先到设置区域填写 RunningHub API Key');
+    return;
+  }
+  void window.batchApi.resumePendingTasks?.({ tasks: pendingRecoveryTasks.value });
+  const queued = pendingRecoveryTasks.value.filter((task) => task.status === 'queued');
+  const existingIds = new Set(tasks.value.map((task) => task.id));
+  const restored = queued.filter((task) => !existingIds.has(task.id));
+  if (restored.length === 0) {
+    recoveryBannerHidden.value = true;
+    showOperationNotice('没有可恢复的排队任务，运行中的任务正在后台查询。', 'success');
+    return;
+  }
+  tasks.value = [...tasks.value, ...restored];
+  batchDir.value = restored[0].batchDir || batchDir.value;
+  pendingRecoveryTasks.value = pendingRecoveryTasks.value.filter((task) => !restored.some((item) => item.id === task.id));
+  recoveryBannerHidden.value = true;
+  activeTab.value = 'generation';
+  scheduleQueue();
 }
 
 function clampConcurrency(value) {
@@ -622,10 +660,22 @@ function createRunOptions() {
   };
 }
 
+function toPlainRunOptions(options = {}) {
+  return {
+    provider: options.provider || '',
+    prompt: options.prompt || '',
+    aspectRatio: options.aspectRatio || '',
+    resolution: options.resolution || '',
+    model: options.model || '',
+    simulateFailures: options.simulateFailures === true
+  };
+}
+
 function toPlainTask(task) {
   return {
     id: task.id,
     index: task.index,
+    createdAt: task.createdAt,
     image1Index: task.image1Index,
     image2Index: task.image2Index,
     image1Path: task.image1Path,
@@ -639,7 +689,7 @@ function toPlainTask(task) {
     statusMessage: task.statusMessage,
     startedAt: task.startedAt,
     finishedAt: task.finishedAt,
-    runOptions: task.runOptions
+    runOptions: toPlainRunOptions(task.runOptions)
   };
 }
 
@@ -647,6 +697,7 @@ function toManifestTask(task) {
   return {
     id: task.id,
     index: task.index,
+    createdAt: task.createdAt,
     image1Index: task.image1Index,
     image2Index: task.image2Index,
     image1Path: task.image1Path,
@@ -660,7 +711,7 @@ function toManifestTask(task) {
     statusMessage: task.statusMessage,
     startedAt: task.startedAt,
     finishedAt: task.finishedAt,
-    runOptions: task.runOptions
+    runOptions: toPlainRunOptions(task.runOptions)
   };
 }
 
@@ -756,6 +807,29 @@ function applyLaunchValidationMessage(message) {
   activeTab.value = 'workspace';
 }
 
+function toggleQueue() {
+  queuePaused.value = !queuePaused.value;
+  if (queuePaused.value) {
+    clearTimeout(queueTimer);
+    showOperationNotice('队列已暂停，正在执行的任务不会被中断。', 'success');
+    return;
+  }
+  showOperationNotice('队列已继续。', 'success');
+  scheduleQueue();
+}
+
+async function cancelQueuedTasks() {
+  const queued = tasks.value.filter((task) => task.status === 'queued');
+  if (queued.length === 0) return;
+  for (const task of queued) {
+    task.status = 'cancelled';
+    task.statusMessage = '已取消';
+    task.finishedAt = new Date().toISOString();
+  }
+  await writeCurrentManifest();
+  showOperationNotice(`已取消 ${queued.length} 个未提交任务。`, 'success');
+}
+
 async function beginGeneration() {
   launchError.value = '';
   promptError.value = '';
@@ -795,12 +869,14 @@ async function beginGeneration() {
 
 function buildTasks(startIndex = 0, runOptions = createRunOptions()) {
   const next = []; let index = startIndex;
+  const createdAt = new Date().toISOString();
   imageSetA.value.forEach((a, image1Index) => {
     const targets = imageSetB.value.length > 0 ? imageSetB.value : [null];
     targets.forEach((b, image2Index) => {
       next.push({
         id: `${image1Index}-${image2Index}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         index,
+        createdAt,
         image1Index,
         image2Index: b ? image2Index : -1,
         image1Path: a.path,
@@ -822,30 +898,9 @@ function buildTasks(startIndex = 0, runOptions = createRunOptions()) {
   return next;
 }
 
-function buildRetryTask(sourceTask, index) {
-  const runOptions = sourceTask.runOptions || createRunOptions();
-  return {
-    id: `retry-${sourceTask.image1Index}-${sourceTask.image2Index}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    index,
-    image1Index: sourceTask.image1Index,
-    image2Index: sourceTask.image2Index,
-    image1Path: sourceTask.image1Path,
-    image2Path: sourceTask.image2Path || '',
-    batchDir: '',
-    outputName: '',
-    outputPath: '',
-    outputUrl: '',
-    remoteTaskId: '',
-    status: 'queued',
-    statusMessage: '等待中',
-    startedAt: '',
-    finishedAt: '',
-    runOptions
-  };
-}
-
 function scheduleQueue() {
   clearTimeout(queueTimer);
+  if (queuePaused.value) return;
   const maxConcurrency = clampConcurrency(config.concurrency);
   if (activeCount.value >= maxConcurrency) return;
   const nextTask = tasks.value.find((task) => task.status === 'queued');
@@ -877,9 +932,12 @@ async function runTask(task) {
   task.outputPath = '';
   task.outputUrl = '';
   task.remoteTaskId = '';
-  void writeCurrentManifest(taskBatchDir);
-
   try {
+    await window.batchApi.updateManifestTask({
+      batchDir: taskBatchDir,
+      taskId: task.id,
+      task: toManifestTask(task)
+    });
     const runOptions = task.runOptions || createRunOptions();
     const result = await window.batchApi.runTask(stringifySafe({
       batchDir: taskBatchDir,
@@ -895,23 +953,40 @@ async function runTask(task) {
   } catch (error) {
     task.status = 'failed';
     task.statusMessage = error?.message || '生成失败';
+    if (shouldPauseQueue(error?.message)) {
+      queuePaused.value = true;
+      clearTimeout(queueTimer);
+      showOperationNotice('检测到余额、Key 或权限问题，队列已暂停，请修复设置后再继续。');
+    }
   } finally {
     task.finishedAt = new Date().toISOString();
     activeCount.value -= 1;
-    await writeCurrentManifest(taskBatchDir);
+    try {
+      await window.batchApi.updateManifestTask({
+        batchDir: taskBatchDir,
+        taskId: task.id,
+        task: toManifestTask(task)
+      });
+    } catch (error) {
+      showOperationNotice('任务已结束，但本地记录写入失败，请刷新历史后检查。');
+    }
     scheduleQueue();
   }
 }
 
+function shouldPauseQueue(message) {
+  return /(余额|余额不足|quota|balance|credit|insufficient|api key|unauthorized|forbidden|permission|401|402|403)/i.test(String(message || ''));
+}
+
 async function retryTask(task) {
-  await replaceFailedTasks([task]);
+  await requeueFailedTasks([task]);
 }
 
 async function retryFailed() {
-  await replaceFailedTasks(tasks.value.filter((task) => task.status === 'failed'));
+  await requeueFailedTasks(tasks.value.filter((task) => task.status === 'failed'));
 }
 
-async function replaceFailedTasks(sourceTasks) {
+async function requeueFailedTasks(sourceTasks) {
   const failedTasks = sourceTasks.filter((task) => task?.status === 'failed');
   if (failedTasks.length === 0) return;
   const validationMessage = getLaunchValidationMessage();
@@ -919,32 +994,32 @@ async function replaceFailedTasks(sourceTasks) {
     applyLaunchValidationMessage(validationMessage);
     return;
   }
-  const nextIndex = Math.max(0, ...tasks.value.map((task) => Number(task.index) || 0)) + 1;
-  const retryTasks = failedTasks.map((task, offset) => buildRetryTask(task, nextIndex + offset));
-  try {
-    const batch = await window.batchApi.createBatch(stringifySafe({
-      outputRoot: config.outputRoot,
-      prompt: retryTasks[0]?.runOptions?.prompt || prompt.value,
-      params: {
-        aspectRatio: retryTasks[0]?.runOptions?.aspectRatio || params.aspectRatio,
-        resolution: retryTasks[0]?.runOptions?.resolution || params.resolution,
-        provider: retryTasks[0]?.runOptions?.provider || config.provider,
-        model: retryTasks[0]?.runOptions?.model || config.runninghubModel
-      },
-      tasks: retryTasks.map(toManifestTask)
-    }));
-    const reservedTasks = Array.isArray(batch.tasks) && batch.tasks.length === retryTasks.length ? batch.tasks : retryTasks;
-    const appendedTasks = reservedTasks.map((task) => ({ ...task, batchDir: batch.batchDir }));
-    const replacedIds = new Set(failedTasks.map((task) => task.id));
-    const affectedDirs = [...new Set(failedTasks.map((task) => task.batchDir || batchDir.value).filter(Boolean))];
-    tasks.value = [...tasks.value.filter((task) => !replacedIds.has(task.id)), ...appendedTasks];
-    batchDir.value = batch.batchDir;
-    activeTab.value = 'generation';
-    await Promise.all(affectedDirs.map((dir) => writeCurrentManifest(dir, true)));
-    scheduleQueue();
-  } catch (error) {
-    showOperationNotice(error?.message || '重新生成失败，请稍后重试');
+
+  let requeued = 0;
+  for (const task of failedTasks) {
+    const previous = toManifestTask(task);
+    task.status = 'queued';
+    task.statusMessage = '等待重试';
+    task.remoteTaskId = '';
+    task.outputPath = '';
+    task.outputUrl = '';
+    task.startedAt = '';
+    task.finishedAt = '';
+
+    try {
+      await window.batchApi.updateManifestTask({
+        batchDir: task.batchDir || batchDir.value,
+        taskId: task.id,
+        task: toManifestTask(task)
+      });
+      requeued += 1;
+    } catch (error) {
+      Object.assign(task, previous);
+      showOperationNotice(error?.message || '重试任务记录更新失败，请稍后重试');
+    }
   }
+
+  if (requeued > 0) scheduleQueue();
 }
 
 async function deleteSelectedTasks(selectionKeys) {
