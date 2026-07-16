@@ -25,6 +25,10 @@
           <p>所有图片都在这里，默认每页 50 张。</p>
         </div>
         <div class="top-actions">
+          <button class="ghost" type="button" :disabled="queuedCount === 0 && !queuePaused" @click="$emit('toggle-queue')">
+            <Play v-if="queuePaused" :size="16" /><Pause v-else :size="16" />{{ queuePaused ? '继续队列' : '暂停队列' }}
+          </button>
+          <button class="ghost" type="button" :disabled="queuedCount === 0" @click="$emit('cancel-queued')">取消排队</button>
           <button class="ghost" type="button" :disabled="pagedGallery.length === 0" @click="toggleSelectAll">{{ allSelected ? '取消全选' : '全选' }}</button>
           <button class="ghost" type="button" :disabled="selectedKeys.length === 0" @click="emitDeleteSelected">删除已选</button>
         </div>
@@ -69,41 +73,43 @@
     </section>
 
     <div v-if="previewItem" class="modal-backdrop task-preview-backdrop" @click.self="closePreview">
-      <section class="task-preview-modal gallery-preview-modal" role="dialog" aria-modal="true" aria-label="图片预览" :style="{ '--preview-aspect-ratio': previewAspectRatio }">
+      <section class="task-preview-modal gallery-preview-modal" role="dialog" aria-modal="true" aria-label="图片预览">
+        <div class="gallery-preview-viewport">
+          <img v-if="previewItem.url" ref="imageElement" class="gallery-preview-image" :src="previewItem.url" :alt="previewItem.name" @load="initializePanzoom" @contextmenu.prevent="showPreviewContextMenu" />
+          <div v-else class="state-box preview-state-box" :class="`state-${previewItem.status}`">
+            <div v-if="isBusy(previewItem.status)" class="state-spinner"></div>
+            <span class="state-main-text">{{ stateLabel(previewItem) }}</span>
+          </div>
+        </div>
+
         <div class="modal-header">
           <div>
             <h2>卡片预览</h2>
             <p>{{ previewItem.name }} {{ previewItem.statusText }}</p>
           </div>
-          <button class="icon-btn close-btn" type="button" @click="closePreview" title="关闭"><X :size="18" /></button>
-        </div>
-
-        <div class="task-preview-stage">
-          <button class="ghost preview-nav preview-prev" type="button" :disabled="!hasPrevItem" @click="showPrevItem" aria-label="上一张"><ChevronLeft :size="18" /></button>
-
-          <div class="task-preview-frame gallery-preview-frame">
-            <img v-if="previewItem.url" :src="previewItem.url" :alt="previewItem.name" />
-            <div v-else class="state-box preview-state-box" :class="`state-${previewItem.status}`">
-              <div v-if="isBusy(previewItem.status)" class="state-spinner"></div>
-              <span class="state-main-text">{{ stateLabel(previewItem) }}</span>
-            </div>
+          <div class="preview-header-actions">
+            <button class="icon-btn close-btn" type="button" :disabled="!previewItem.outputPath" @click="downloadPreviewImage" title="下载图片"><Download :size="18" /></button>
+            <button class="icon-btn close-btn" type="button" @click="closePreview" title="关闭"><X :size="18" /></button>
           </div>
-
-          <button class="ghost preview-nav preview-next" type="button" :disabled="!hasNextItem" @click="showNextItem" aria-label="下一张"><ChevronRight :size="18" /></button>
         </div>
+
+        <button class="ghost preview-nav preview-prev" type="button" :disabled="!hasPrevItem" @click="showPrevItem" aria-label="上一张"><ChevronLeft :size="18" /></button>
+        <button class="ghost preview-nav preview-next" type="button" :disabled="!hasNextItem" @click="showNextItem" aria-label="下一张"><ChevronRight :size="18" /></button>
 
         <div class="task-preview-footer">
           <span>{{ previewIndex + 1 }} / {{ pagedGallery.length }}</span>
-          <span>左右键切换，Esc 关闭</span>
+          <span>滚轮缩放，右键复制图片</span>
         </div>
+        <div v-if="downloadNotice" class="preview-download-toast" role="status">{{ downloadNotice }}</div>
       </section>
     </div>
   </section>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ChevronLeft, ChevronRight, FolderOpen, RotateCcw, X } from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ChevronLeft, ChevronRight, Download, FolderOpen, Pause, Play, RotateCcw, X } from 'lucide-vue-next';
+import { useImagePanzoom } from '../useImagePanzoom.mjs';
 
 const props = defineProps({
   tasks: { type: Array, required: true },
@@ -112,26 +118,31 @@ const props = defineProps({
   historyPageSize: { type: Number, required: true },
   completedCount: { type: Number, required: true },
   successCount: { type: Number, required: true },
-  failedCount: { type: Number, required: true }
+  failedCount: { type: Number, required: true },
+  queuePaused: { type: Boolean, required: true },
+  queuedCount: { type: Number, required: true }
 });
 
-const emit = defineEmits(['retry-failed', 'open-batch-dir', 'retry-task', 'change-page', 'delete-selected']);
+const emit = defineEmits(['retry-failed', 'open-batch-dir', 'retry-task', 'change-page', 'delete-selected', 'toggle-queue', 'cancel-queued']);
 
 const selectedKeys = ref([]);
 const previewKey = ref('');
 
 const galleryItems = computed(() => {
-  const taskItems = props.tasks.map((task) => ({
-    key: `task:${task.id}`,
-    sourceType: 'task',
-    task,
-    url: task.outputUrl || '',
-    outputPath: task.outputPath || '',
-    name: `#${(task.index ?? 0) + 1}`,
-    status: task.status || 'queued',
-    statusText: taskStatusText(task.status),
-    statusMessage: task.statusMessage || ''
-  }));
+  const taskItems = props.tasks
+    .map((task, position) => ({ task, position }))
+    .sort((a, b) => taskCreatedAt(b.task) - taskCreatedAt(a.task) || a.position - b.position)
+    .map(({ task }) => ({
+      key: `task:${task.id}`,
+      sourceType: 'task',
+      task,
+      url: task.outputUrl || '',
+      outputPath: task.outputPath || '',
+      name: `#${(task.index ?? 0) + 1}`,
+      status: task.status || 'queued',
+      statusText: taskStatusText(task.status),
+      statusMessage: task.statusMessage || ''
+    }));
 
   const taskUrls = new Set(taskItems.map((item) => item.url).filter(Boolean));
   const taskPaths = new Set(taskItems.map((item) => item.outputPath).filter(Boolean));
@@ -163,8 +174,10 @@ const previewIndex = computed(() => pagedGallery.value.findIndex((item) => item.
 const previewItem = computed(() => pagedGallery.value[previewIndex.value] || null);
 const hasPrevItem = computed(() => previewIndex.value > 0);
 const hasNextItem = computed(() => previewIndex.value >= 0 && previewIndex.value < pagedGallery.value.length - 1);
-const previewAspectRatio = ref('3 / 4');
-let previewAspectRatioToken = 0;
+const downloadNotice = ref('');
+let downloadNoticeTimer = 0;
+let removeImageActionListener = null;
+const { imageElement, initialize: initializePanzoom } = useImagePanzoom(() => previewItem.value?.url || '');
 
 watch(() => pagedGallery.value.map((item) => item.key), (keys) => {
   const visibleKeys = new Set(keys);
@@ -172,43 +185,44 @@ watch(() => pagedGallery.value.map((item) => item.key), (keys) => {
   if (previewKey.value && !visibleKeys.has(previewKey.value)) previewKey.value = '';
 });
 
-watch(() => previewItem.value?.url || '', async (url) => {
-  const token = ++previewAspectRatioToken;
-  if (!url) {
-    previewAspectRatio.value = '3 / 4';
-    return;
-  }
-  try {
-    const ratio = await getImageAspectRatio(url);
-    if (token === previewAspectRatioToken) previewAspectRatio.value = ratio;
-  } catch {
-    if (token === previewAspectRatioToken) previewAspectRatio.value = '3 / 4';
-  }
-}, { immediate: true });
-
-onMounted(() => window.addEventListener('keydown', handlePreviewKeydown));
-onBeforeUnmount(() => window.removeEventListener('keydown', handlePreviewKeydown));
+onMounted(() => {
+  window.addEventListener('keydown', handlePreviewKeydown);
+  removeImageActionListener = window.batchApi.onImageActionResult?.(handleImageActionResult) || null;
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handlePreviewKeydown);
+  window.clearTimeout(downloadNoticeTimer);
+  if (typeof removeImageActionListener === 'function') removeImageActionListener();
+});
 
 function taskStatusText(status) {
   if (status === 'success') return '完成';
   if (status === 'failed') return '失败';
+  if (status === 'cancelled') return '已取消';
   if (status === 'running') return '生成中';
   return '等待中';
 }
 
 function stateLabel(item) {
-  if (item.status === 'failed') return friendlyFailureText(item.statusMessage);
+  if (item.status === 'failed') return `${failureReasonText(item.statusMessage)}\uff0c\u8bf7\u70b9\u51fb\u91cd\u8bd5`;
   return item.statusMessage || taskStatusText(item.status);
 }
 
-function friendlyFailureText(message) {
+function taskCreatedAt(task) {
+  const timestamp = Date.parse(task?.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function failureReasonText(message) {
   const text = String(message || '').toLowerCase();
-  if (/balance|余额|insufficient|not enough|quota|额度|欠费|recharge|充值/.test(text)) return '余额不足';
-  if (/audit|security|content|内容安全|审核|敏感|违规|blocked|policy|safety/.test(text)) return '内容审核未通过';
-  if (/busy|timeout|timed out|rate|limit|too many|429|繁忙|超时|限流/.test(text)) return '系统繁忙，请稍后重试';
-  if (/network|fetch|socket|econn|dns|连接|网络/.test(text)) return '网络连接异常';
-  if (/key|unauthorized|forbidden|401|403|api key|密钥|鉴权/.test(text)) return 'API Key 无效';
-  return '生成失败，请重试';
+  if (/balance|insufficient|not enough|quota|credit|recharge/.test(text)) return '\u4f59\u989d\u4e0d\u8db3';
+  if (/key|unauthorized|forbidden|401|403|api key/.test(text)) return 'API Key \u65e0\u6548';
+  if (/audit|security|content|blocked|policy|safety/.test(text)) return '\u5185\u5bb9\u5ba1\u6838\u672a\u901a\u8fc7';
+  if (/busy|timeout|timed out|rate|limit|too many|429/.test(text)) return '\u7cfb\u7edf\u7e41\u5fd9';
+  if (/network|fetch|socket|econn|dns/.test(text)) return '\u7f51\u7edc\u8fde\u63a5\u5f02\u5e38';
+  if (/manifest|local record/.test(text)) return '\u672c\u5730\u4efb\u52a1\u8bb0\u5f55\u5f02\u5e38';
+  const detail = String(message || '').replace(/^\u751f\u6210\u5931\u8d25[:：]?\s*/i, '').trim();
+  return detail && detail.length <= 48 ? detail : '\u751f\u6210\u5931\u8d25';
 }
 
 function isBusy(status) {
@@ -232,22 +246,60 @@ function emitDeleteSelected() {
   emit('delete-selected', [...selectedKeys.value]);
 }
 
+async function setPreviewItem(key) {
+  previewKey.value = key;
+  await nextTick();
+  await initializePanzoom();
+}
+
 function openPreview(item) {
-  previewKey.value = item.key;
+  void setPreviewItem(item.key);
 }
 
 function closePreview() {
   previewKey.value = '';
 }
 
+async function downloadPreviewImage() {
+  if (!previewItem.value?.outputPath) return;
+  try {
+    const saved = await window.batchApi.downloadImage({
+      sourcePath: previewItem.value.outputPath,
+      name: previewItem.value.name
+    });
+    if (saved) showDownloadNotice('图片已保存');
+  } catch (error) {
+    showDownloadNotice(error?.message || '图片保存失败');
+  }
+}
+
+function showDownloadNotice(message) {
+  downloadNotice.value = message;
+  window.clearTimeout(downloadNoticeTimer);
+  downloadNoticeTimer = window.setTimeout(() => { downloadNotice.value = ''; }, 2400);
+}
+
+function handleImageActionResult(payload) {
+  if (payload?.sourcePath !== previewItem.value?.outputPath) return;
+  showDownloadNotice(payload.message || '图片操作完成');
+}
+
+async function showPreviewContextMenu() {
+  if (!previewItem.value?.outputPath) return;
+  await window.batchApi.showImageContextMenu({
+    sourcePath: previewItem.value.outputPath,
+    name: previewItem.value.name
+  });
+}
+
 function showPrevItem() {
   if (!hasPrevItem.value) return;
-  previewKey.value = pagedGallery.value[previewIndex.value - 1]?.key || '';
+  void setPreviewItem(pagedGallery.value[previewIndex.value - 1]?.key || '');
 }
 
 function showNextItem() {
   if (!hasNextItem.value) return;
-  previewKey.value = pagedGallery.value[previewIndex.value + 1]?.key || '';
+  void setPreviewItem(pagedGallery.value[previewIndex.value + 1]?.key || '');
 }
 
 function handlePreviewKeydown(event) {
@@ -263,20 +315,4 @@ function handlePreviewKeydown(event) {
   }
 }
 
-function getImageAspectRatio(url) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      const width = image.naturalWidth || image.width;
-      const height = image.naturalHeight || image.height;
-      if (!width || !height) {
-        reject(new Error('invalid image size'));
-        return;
-      }
-      resolve(`${width} / ${height}`);
-    };
-    image.onerror = reject;
-    image.src = url;
-  });
-}
 </script>

@@ -45,7 +45,7 @@ const obfuscationOptions = {
     '^\\.\\/runninghub\\.cjs$',
     '^\\.\\/preload\\.cjs$',
     '^https:\\/\\/raw\\.githubusercontent\\.com\\/ninespotttt\\/AI-Batch-Edit\\/main\\/notice\\.json$',
-    '^https:\\/\\/www\\.runninghub\\.cn',
+    '^https:\\/\\/www\\.runninghub\\.ai',
     '^https:\\/\\/www\\.douyin\\.com\\/user\\/'
   ]
 };

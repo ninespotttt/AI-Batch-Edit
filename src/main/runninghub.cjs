@@ -4,6 +4,7 @@ const FormData = require('form-data');
 const axios = require('axios');
 const sharp = require('sharp');
 
+const RUNNINGHUB_API_BASE_URL = 'https://www.runninghub.ai';
 const UPLOAD_CACHE_LIMIT = 300;
 const uploadUrlCache = new Map();
 
@@ -224,9 +225,8 @@ class RunningHubClient {
   constructor({ apiKey, baseUrl }) {
     if (!apiKey) throw new Error('请先在API设置中填写API Key');
     this.apiKey = apiKey;
-    this.host = (baseUrl || 'https://www.runninghub.cn').replace(/\/$/, '');
+    this.host = (baseUrl || RUNNINGHUB_API_BASE_URL).replace(/\/$/, '');
   }
-
   headers(json = true) {
     const headers = { Authorization: `Bearer ${this.apiKey}`, Accept: 'application/json' };
     if (json) headers['Content-Type'] = 'application/json';
@@ -411,5 +411,6 @@ module.exports = {
   generateRunningHubImage,
   canonicalModel,
   modelSpec,
+  RUNNINGHUB_API_BASE_URL,
   startRunningHubImageTask
 };

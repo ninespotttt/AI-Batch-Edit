@@ -11,11 +11,12 @@
     "build": "vite build",
     "dist:win": "npm run build && electron-builder --win zip",
     "build:protected": "node scripts/build-obfuscated.mjs",
-    "dist:win:protected": "npm run build:protected && electron-builder --config electron-builder.protected.json --win zip",
+    "dist:win:protected": "npm run build:protected && electron-builder --config .electron-builder-protected-installer.json --win nsis",
     "dist:mac:protected": "npm run build:protected && node scripts/package-mac-obfuscated.mjs",
     "check": "node --check src/main/main.cjs && node --check src/main/preload.cjs && vite build"
   },
   "dependencies": {
+    "@panzoom/panzoom": "^4.6.2",
     "axios": "^1.7.2",
     "form-data": "^4.0.0",
     "sharp": "^0.34.5"
@@ -69,10 +70,10 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
       "target": [
         "zip"
       ],
-      "signAndEditExecutable": false,
       "artifactName": "万能AI批量编辑器-win.${ext}"
     }
   }

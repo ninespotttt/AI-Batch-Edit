@@ -53,12 +53,12 @@
           <div v-else class="state-box previewable" :class="`state-${task.status}`" @click="openPreview(task)">
             <div class="state-pulse"></div>
             <div v-if="task.status === 'running' || task.status === 'queued'" class="state-spinner"></div>
-            <span>{{ stateLabel(task.status) }}</span>
+            <span>{{ stateLabel(task) }}</span>
           </div>
 
           <div class="task-meta">
             <strong>#{{ task.index + 1 }}</strong>
-            <span>{{ task.statusMessage }}</span>
+            <span>{{ task.status === 'failed' ? friendlyFailureText(task.statusMessage) : task.statusMessage }}</span>
           </div>
 
           <button v-if="task.status === 'failed'" class="retry-btn" @click="$emit('retry-task', task)">
@@ -104,14 +104,17 @@
             <h2>卡片预览</h2>
             <p>#{{ previewTask.index + 1 }} {{ previewTask.statusMessage }}</p>
           </div>
-          <button class="icon-btn close-btn" @click="closePreview" title="关闭"><X :size="18" /></button>
+          <div class="preview-header-actions">
+            <button class="icon-btn close-btn" type="button" :disabled="!previewTask.outputPath" @click="downloadPreviewImage" title="下载图片"><Download :size="18" /></button>
+            <button class="icon-btn close-btn" type="button" @click="closePreview" title="关闭"><X :size="18" /></button>
+          </div>
         </div>
 
         <div class="task-preview-stage">
           <button class="ghost preview-nav preview-prev" :disabled="!hasPrevTask" @click="showPrevTask" aria-label="上一张"><ChevronLeft :size="18" /></button>
 
           <div class="task-preview-frame">
-            <img v-if="previewTask.outputUrl" :src="previewTask.outputUrl" alt="预览图片" />
+            <img v-if="previewTask.outputUrl" ref="imageElement" :src="previewTask.outputUrl" alt="预览图片" @load="initializePanzoom" @contextmenu.prevent="showPreviewContextMenu" />
             <div v-else class="state-box preview-state-box" :class="`state-${previewTask.status}`">
               <div class="state-pulse"></div>
               <div v-if="previewTask.status === 'running' || previewTask.status === 'queued'" class="state-spinner"></div>
@@ -123,8 +126,9 @@
         </div>
         <div class="task-preview-footer">
           <span>{{ previewIndex + 1 }} / {{ tasks.length }}</span>
-          <span>左右键切换，Esc 关闭</span>
+          <span>滚轮缩放，右键复制图片</span>
         </div>
+        <div v-if="downloadNotice" class="preview-download-toast" role="status">{{ downloadNotice }}</div>
       </section>
     </div>
   </section>
@@ -132,7 +136,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ChevronLeft, ChevronRight, RotateCcw, X } from 'lucide-vue-next';
+import { ChevronLeft, ChevronRight, Download, RotateCcw, X } from 'lucide-vue-next';
+import { useImagePanzoom } from '../useImagePanzoom.mjs';
 
 const props = defineProps({
   tasks: { type: Array, required: true },
@@ -158,6 +163,10 @@ const previewIndex = computed(() => props.tasks.findIndex((task) => task.id === 
 const previewTask = computed(() => props.tasks[previewIndex.value] || null);
 const hasPrevTask = computed(() => previewIndex.value > 0);
 const hasNextTask = computed(() => previewIndex.value >= 0 && previewIndex.value < props.tasks.length - 1);
+const downloadNotice = ref('');
+let downloadNoticeTimer = 0;
+let removeImageActionListener = null;
+const { imageElement, initialize: initializePanzoom } = useImagePanzoom(() => previewTask.value?.outputUrl || '');
 
 watch(() => props.tasks.map((task) => task.id), (taskIds) => {
   const nextIds = new Set(taskIds);
@@ -169,20 +178,35 @@ watch(() => props.tasks.map((task) => task.id), (taskIds) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handlePreviewKeydown);
+  removeImageActionListener = window.batchApi.onImageActionResult?.(handleImageActionResult) || null;
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handlePreviewKeydown);
+  window.clearTimeout(downloadNoticeTimer);
+  if (typeof removeImageActionListener === 'function') removeImageActionListener();
 });
 
-function stateLabel(status) {
+function stateLabel(task) {
   const labels = {
     queued: '等待中',
     running: '生成中',
     success: '已完成',
-    failed: '失败'
+    failed: '失败',
+    cancelled: '已取消'
   };
-  return labels[status] || status;
+  if (task.status === 'failed') return friendlyFailureText(task.statusMessage);
+  return labels[task.status] || task.status;
+}
+
+function friendlyFailureText(message) {
+  const text = String(message || '').toLowerCase();
+  if (/balance|insufficient|not enough|quota|credit|recharge|余额|额度|欠费|充值/.test(text)) return '\u4f59\u989d\u4e0d\u8db3\uff0c\u8bf7\u5145\u503c\u540e\u91cd\u8bd5';
+  if (/key|unauthorized|forbidden|401|403|api key|密钥|鉴权/.test(text)) return 'API Key \u65e0\u6548\uff0c\u8bf7\u68c0\u67e5\u8bbe\u7f6e';
+  if (/audit|security|content|blocked|policy|safety|审核|敏感|违规/.test(text)) return '\u5185\u5bb9\u5ba1\u6838\u672a\u901a\u8fc7\uff0c\u8bf7\u4fee\u6539\u63d0\u793a\u8bcd';
+  if (/busy|timeout|timed out|rate|limit|too many|429|繁忙|超时|限流/.test(text)) return '\u670d\u52a1\u7e41\u5fd9\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5';
+  if (/network|fetch|socket|econn|dns|连接|网络/.test(text)) return '\u7f51\u7edc\u8fde\u63a5\u5f02\u5e38\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc';
+  return '\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u70b9\u51fb\u91cd\u8bd5';
 }
 
 function toggleTaskSelection(taskId) {
@@ -212,6 +236,38 @@ function openPreview(task) {
 
 function closePreview() {
   previewTaskId.value = '';
+}
+
+async function downloadPreviewImage() {
+  if (!previewTask.value?.outputPath) return;
+  try {
+    const saved = await window.batchApi.downloadImage({
+      sourcePath: previewTask.value.outputPath,
+      name: previewTask.value.outputName || `图片-${previewTask.value.index + 1}.png`
+    });
+    if (saved) showDownloadNotice('图片已保存');
+  } catch (error) {
+    showDownloadNotice(error?.message || '图片保存失败');
+  }
+}
+
+function showDownloadNotice(message) {
+  downloadNotice.value = message;
+  window.clearTimeout(downloadNoticeTimer);
+  downloadNoticeTimer = window.setTimeout(() => { downloadNotice.value = ''; }, 2400);
+}
+
+function handleImageActionResult(payload) {
+  if (payload?.sourcePath !== previewTask.value?.outputPath) return;
+  showDownloadNotice(payload.message || '图片操作完成');
+}
+
+async function showPreviewContextMenu() {
+  if (!previewTask.value?.outputPath) return;
+  await window.batchApi.showImageContextMenu({
+    sourcePath: previewTask.value.outputPath,
+    name: previewTask.value.outputName || `图片-${previewTask.value.index + 1}.png`
+  });
 }
 
 function showPrevTask() {
