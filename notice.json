@@ -3,7 +3,7 @@
   "id": "2026-07-16-v3-runninghub-migration",
   "type": "update",
   "title": "V3 重要更新：请升级新版",
-  "message": "RunningHub 正在迁移海外服务域名，请尽快网盘下载 V3 新版，并去设置中心用RH新的海外新地址注册获取新的 API Key，不懂微信jiangzi4560；旧版不要继续充值！下个月用不了！",
+  "message": "RunningHub 正在迁移海外服务域名，请尽快网盘下载 V3 新版，并去设置中心用 RunningHub 新地址注册获取新的 API Key，不懂微信jiangzi4560；旧版不要继续充值！下个月用不了！所有操作流程照旧，只是网址变了！新地址：https://www.runninghub.ai?inviteCode=wtfdbtbd",
   "buttonText": "下载 V3 新版",
   "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/",
   "force": false
