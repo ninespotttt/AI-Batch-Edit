@@ -672,7 +672,7 @@ async function createWindow() {
     height: 860,
     minWidth: 1120,
     minHeight: 740,
-    title: '万能AI批量编辑器',
+    title: '万能AI批量编辑器-V3',
     icon: path.join(app.getAppPath(), 'build', 'icon.ico'),
     backgroundColor: '#f6f7fb',
     webPreferences: {
