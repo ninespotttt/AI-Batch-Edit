@@ -1,10 +1,10 @@
 {
   "enabled": true,
-  "id": "2026-06-05-update-notice",
+  "id": "2026-07-16-v3-runninghub-migration",
   "type": "update",
-  "title": "V2 版本已更新",
-  "message": " V2版本修复banana pro运行失败问题，网盘下载新版，微信jiangzi4560.使用教程https://mp.weixin.qq.com/s/P_hVRkywnzXpdFsv1IHdEA",
-  "buttonText": "查看地址",
+  "title": "V3 重要更新：请升级新版",
+  "message": "RunningHub 正在迁移海外服务域名，请尽快网盘下载 V3 新版，并去设置中心用RH新的海外新地址注册获取新的 API Key，不懂微信jiangzi4560；旧版不要继续充值！下个月用不了！",
+  "buttonText": "下载 V3 新版",
   "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/",
   "force": false
 }
