@@ -1,10 +1,10 @@
 {
   "enabled": true,
-  "id": "2026-07-16-v3-runninghub-migration",
+  "id": "2026-09-10-v4-gpt-image25",
   "type": "update",
-  "title": "V3 重要更新：请升级新版",
-  "message": "RunningHub 正在迁移海外服务域名，请尽快网盘下载 V3 新版，并去设置中心用 RunningHub 新地址注册获取新的 API Key，不懂微信jiangzi4560；旧版不要继续充值！下个月用不了！所有操作流程照旧，只是网址变了！新地址：https://www.runninghub.ai?inviteCode=wtfdbtbd",
-  "buttonText": "下载 V3 新版",
+  "title": "V4 版本更新",
+  "message": "新增 GPT Image 2.5 模型，支持「中等」「高质量」「最高质量」三个档位。选择模型后，可在「尺寸」右侧选择生成质量，默认高质量，其他操作流程不变。",
+  "buttonText": "下载 V4 新版",
   "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/",
   "force": false
 }
