@@ -9,6 +9,9 @@
     "electron:dev": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "start": "concurrently -k \"npm:dev\" \"wait-on http://127.0.0.1:5173 && npm:electron:dev\"",
     "build": "vite build",
+    "test:quality": "node scripts/test-runninghub-quality.cjs",
+    "test:stability": "node scripts/test-runninghub-stability.cjs",
+    "test:user-flow": "node scripts/test-user-flow-browser.cjs",
     "dist:win": "npm run build && electron-builder --win zip",
     "build:protected": "node scripts/build-obfuscated.mjs",
     "dist:win:protected": "npm run build:protected && electron-builder --config electron-builder.protected.json --win zip",
@@ -42,6 +45,7 @@
     "files": [
       "dist/**/*",
       "src/main/**/*",
+      "src/shared/**/*",
       "build/icon.ico",
       "notice.json",
       "使用和密钥注册教程.pdf",

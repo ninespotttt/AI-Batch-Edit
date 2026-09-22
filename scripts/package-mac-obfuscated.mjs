@@ -649,6 +649,7 @@ async function verifyMacZip(zipPath, arch) {
     `${prefix}/Resources/app/src/main/main.cjs`,
     `${prefix}/Resources/app/src/main/preload.cjs`,
     `${prefix}/Resources/app/src/main/runninghub.cjs`,
+    `${prefix}/Resources/app/src/shared/runninghub-models.json`,
     `${prefix}/Resources/app/node_modules/sharp/package.json`,
     `${prefix}/Resources/app/node_modules/@img/${requiredSharpPackage(arch)}/package.json`,
     `${prefix}/Resources/app/node_modules/@img/${requiredLibvipsPackage(arch)}/package.json`,
@@ -683,11 +684,13 @@ async function verifyUniversalMacZip(zipPath) {
     `${universalArmDir}/${productName}.app/Contents/Info.plist`,
     `${universalArmDir}/${productName}.app/Contents/MacOS/Electron`,
     `${universalArmDir}/${productName}.app/Contents/Resources/app/dist/index.html`,
+    `${universalArmDir}/${productName}.app/Contents/Resources/app/src/shared/runninghub-models.json`,
     `${universalArmDir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredSharpPackage('arm64')}/package.json`,
     `${universalArmDir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredLibvipsPackage('arm64')}/package.json`,
     `${universalX64Dir}/${productName}.app/Contents/Info.plist`,
     `${universalX64Dir}/${productName}.app/Contents/MacOS/Electron`,
     `${universalX64Dir}/${productName}.app/Contents/Resources/app/dist/index.html`,
+    `${universalX64Dir}/${productName}.app/Contents/Resources/app/src/shared/runninghub-models.json`,
     `${universalX64Dir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredSharpPackage('x64')}/package.json`,
     `${universalX64Dir}/${productName}.app/Contents/Resources/app/node_modules/@img/${requiredLibvipsPackage('x64')}/package.json`
   ];

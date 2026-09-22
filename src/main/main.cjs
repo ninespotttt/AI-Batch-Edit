@@ -12,6 +12,7 @@ const NOTICE_URL = 'https://api.github.com/repos/ninespotttt/AI-Batch-Edit/conte
 const PREVIEW_CACHE_VERSION = 'v5';
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const ALLOWED_EXTERNAL_URLS = [
+  /^https:\/\/pan\.baidu\.com\/s\/12srDmH8T7PP3i93aN8ypog$/,
   /^https:\/\/www\.runninghub\.ai(?:\/|\?|$)/,
   /^https:\/\/www\.douyin\.com\/user\//,
   /^https:\/\/github\.com\/ninespotttt\/AI-Batch-Edit(?:\/|$)/
@@ -54,6 +55,7 @@ function defaultConfig() {
     runninghubApiKey: '',
     runninghubBaseUrl: RUNNINGHUB_API_BASE_URL,
     runninghubModel: 'rhart-image-n-g31-flash',
+    quality: 'high',
     openaiBaseUrl: '',
     openaiApiKey: '',
     openaiModel: '',
@@ -415,7 +417,14 @@ function manifestPath(batchDir) {
 }
 
 function writeManifest(batchDir, manifest) {
-  fs.writeFileSync(manifestPath(batchDir), JSON.stringify(manifest, null, 2), 'utf8');
+  const targetPath = manifestPath(batchDir);
+  const temporaryPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, JSON.stringify(manifest, null, 2), 'utf8');
+    fs.renameSync(temporaryPath, targetPath);
+  } finally {
+    if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+  }
 }
 
 function readManifest(batchDir) {
@@ -558,35 +567,43 @@ async function resumeManifestTask(batchDir, task, config) {
     const result = await awaitRunningHubImageTask({
       apiKey: config.runninghubApiKey,
       baseUrl: config.runninghubBaseUrl,
-      taskId: task.remoteTaskId
+      taskId: task.remoteTaskId,
+      startedAt: task.remoteStartedAt || task.startedAt
     });
     const output = writeTaskOutput(batchDir, task, result.buffer);
-    updateManifestTask(batchDir, task.id, {
+    const updatedTask = updateManifestTask(batchDir, task.id, {
       ...task,
       status: 'success',
       statusMessage: '已恢复完成',
       finishedAt: new Date().toISOString(),
       outputPath: output.outputPath,
-      outputUrl: output.outputUrl
+      outputUrl: output.outputUrl,
+      failureKind: '',
+      remoteStatus: 'SUCCESS'
     });
     notifyRecoveryResult({
       batchDir,
       taskId: task.id,
       status: 'success',
-      message: `已重新捕获 #${task.index + 1} 的生成结果`
+      message: `已重新捕获 #${task.index + 1} 的生成结果`,
+      task: updatedTask
     });
   } catch (error) {
-    updateManifestTask(batchDir, task.id, {
+    const failureKind = error?.kind || 'LOCAL_FAILED';
+    const updatedTask = updateManifestTask(batchDir, task.id, {
       ...task,
       status: 'failed',
       statusMessage: error?.message || '恢复失败',
-      finishedAt: new Date().toISOString()
+      finishedAt: new Date().toISOString(),
+      failureKind,
+      remoteStatus: error?.remoteStatus || task.remoteStatus || ''
     });
     notifyRecoveryResult({
       batchDir,
       taskId: task.id,
       status: 'failed',
-      message: error?.message || `#${task.index + 1} 恢复失败`
+      message: error?.message || `#${task.index + 1} 恢复失败`,
+      task: updatedTask
     });
   } finally {
     recoveryJobs.delete(key);
@@ -656,12 +673,14 @@ async function runGenerationAdapter(task, options) {
   return generateRunningHubImage({
     apiKey: config.runninghubApiKey,
     baseUrl: config.runninghubBaseUrl,
+    referenceImagePaths: task.referenceImagePaths || [task.image1Path, task.image2Path].filter(Boolean),
     image1Path: task.image1Path,
     image2Path: task.image2Path,
     prompt: options.prompt || '',
     model: canonicalModel(options.model || config.runninghubModel),
     aspectRatio: options.aspectRatio || '1:1',
-    resolution: options.resolution || '2K'
+    resolution: options.resolution || '2K',
+    quality: options.quality || 'high'
   });
 }
 
@@ -672,7 +691,7 @@ async function createWindow() {
     height: 860,
     minWidth: 1120,
     minHeight: 740,
-    title: '万能AI批量编辑器-V3',
+    title: '万能AI批量编辑器-V4',
     icon: path.join(app.getAppPath(), 'build', 'icon.ico'),
     backgroundColor: '#f6f7fb',
     webPreferences: {
@@ -813,11 +832,25 @@ ipcMain.handle('output:createBatch', (_event, payload) => {
 ipcMain.handle('generation:runTask', async (_event, payload) => {
   const { task, batchDir, options } = unpackPayload(payload);
   if (!task || !batchDir) throw new Error('任务参数不完整');
-  if (!fs.existsSync(task.image1Path) || (task.image2Path && !fs.existsSync(task.image2Path))) {
+  const referenceImagePaths = Array.isArray(task.referenceImagePaths) && task.referenceImagePaths.length > 0
+    ? task.referenceImagePaths
+    : [task.image1Path, task.image2Path].filter(Boolean);
+  if (referenceImagePaths.length === 0 || referenceImagePaths.some((imagePath) => !fs.existsSync(imagePath))) {
     throw new Error('输入图片不存在');
   }
 
-  const runTaskData = task.outputName ? task : { ...task, outputName: nextOutputName(batchDir) };
+  const persistedManifest = readManifest(batchDir);
+  const persistedTask = persistedManifest?.tasks?.find((item) => item?.id === task.id) || {};
+  const mergedTask = {
+    ...persistedTask,
+    ...task,
+    remoteTaskId: task.remoteTaskId || persistedTask.remoteTaskId || '',
+    remoteStartedAt: task.remoteStartedAt || persistedTask.remoteStartedAt || ''
+  };
+  const runTaskData = mergedTask.outputName ? mergedTask : { ...mergedTask, outputName: nextOutputName(batchDir) };
+  runTaskData.referenceImagePaths = Array.isArray(runTaskData.referenceImagePaths) && runTaskData.referenceImagePaths.length > 0
+    ? runTaskData.referenceImagePaths
+    : [runTaskData.image1Path, runTaskData.image2Path].filter(Boolean);
   if (!task.outputName) {
     updateManifestTask(batchDir, task.id, runTaskData);
   }
@@ -826,38 +859,99 @@ ipcMain.handle('generation:runTask', async (_event, payload) => {
     const buffer = await runGenerationAdapter(runTaskData, options || {});
     return {
       ...writeTaskOutput(batchDir, runTaskData, buffer),
+      status: 'success',
+      statusMessage: '完成',
       remoteTaskId: ''
     };
   }
 
   const config = loadConfig();
-  const startResult = await startRunningHubImageTask({
-    apiKey: config.runninghubApiKey,
-    baseUrl: config.runninghubBaseUrl,
-    image1Path: runTaskData.image1Path,
-    image2Path: runTaskData.image2Path,
-    prompt: options?.prompt || '',
-    model: canonicalModel(options?.model || config.runninghubModel),
-    aspectRatio: options?.aspectRatio || '1:1',
-    resolution: options?.resolution || '2K'
-  });
-  updateManifestTask(batchDir, task.id, {
-    ...runTaskData,
-    remoteTaskId: startResult.taskId,
-    status: 'running',
-    statusMessage: '生成中',
-    startedAt: runTaskData.startedAt || new Date().toISOString()
-  });
+  let remoteTaskId = runTaskData.remoteTaskId;
+  let remoteStartedAt = runTaskData.remoteStartedAt;
+  try {
+    if (!remoteTaskId) {
+      const startResult = await startRunningHubImageTask({
+        apiKey: config.runninghubApiKey,
+        baseUrl: config.runninghubBaseUrl,
+        referenceImagePaths: runTaskData.referenceImagePaths || [runTaskData.image1Path, runTaskData.image2Path].filter(Boolean),
+        image1Path: runTaskData.image1Path,
+        image2Path: runTaskData.image2Path,
+        prompt: options?.prompt || '',
+        model: canonicalModel(options?.model || config.runninghubModel),
+        aspectRatio: options?.aspectRatio || '1:1',
+        resolution: options?.resolution || '2K',
+        quality: options?.quality || 'high'
+      });
+      remoteTaskId = startResult.taskId;
+      remoteStartedAt = new Date().toISOString();
+    }
 
-  const result = await awaitRunningHubImageTask({
-    apiKey: config.runninghubApiKey,
-    baseUrl: config.runninghubBaseUrl,
-    taskId: startResult.taskId
-  });
-  return {
-    ...writeTaskOutput(batchDir, runTaskData, result.buffer),
-    remoteTaskId: startResult.taskId
-  };
+    updateManifestTask(batchDir, task.id, {
+      ...runTaskData,
+      remoteTaskId,
+      remoteStartedAt,
+      remoteStatus: 'RUNNING',
+      failureKind: '',
+      status: 'running',
+      statusMessage: '生成中',
+      startedAt: runTaskData.startedAt || new Date().toISOString(),
+      finishedAt: ''
+    });
+
+    let lastProgressMessage = '生成中';
+    const result = await awaitRunningHubImageTask({
+      apiKey: config.runninghubApiKey,
+      baseUrl: config.runninghubBaseUrl,
+      taskId: remoteTaskId,
+      startedAt: remoteStartedAt,
+      onProgress: ({ status, message }) => {
+        if (!message || message === lastProgressMessage) return;
+        lastProgressMessage = message;
+        updateManifestTask(batchDir, task.id, {
+          status: 'running',
+          statusMessage: message,
+          remoteStatus: status || 'RUNNING'
+        });
+      }
+    });
+    const output = writeTaskOutput(batchDir, runTaskData, result.buffer);
+    const finishedAt = new Date().toISOString();
+    updateManifestTask(batchDir, task.id, {
+      status: 'success',
+      statusMessage: '完成',
+      finishedAt,
+      outputPath: output.outputPath,
+      outputUrl: output.outputUrl,
+      remoteTaskId,
+      remoteStartedAt,
+      remoteStatus: 'SUCCESS',
+      failureKind: ''
+    });
+    return { ...output, status: 'success', statusMessage: '完成', remoteTaskId, remoteStartedAt, remoteStatus: 'SUCCESS', failureKind: '' };
+  } catch (error) {
+    const failureKind = error?.kind || 'LOCAL_FAILED';
+    const statusMessage = error?.message || '生成失败';
+    const status = failureKind === 'SUBMIT_UNKNOWN' ? 'unknown' : failureKind === 'SUBMIT_PAUSED' ? 'queued' : 'failed';
+    const finishedAt = status === 'queued' ? '' : new Date().toISOString();
+    updateManifestTask(batchDir, task.id, {
+      ...runTaskData,
+      status,
+      statusMessage,
+      finishedAt,
+      remoteTaskId,
+      remoteStartedAt,
+      remoteStatus: error?.remoteStatus || runTaskData.remoteStatus || '',
+      failureKind
+    });
+    return {
+      status,
+      statusMessage,
+      remoteTaskId,
+      remoteStartedAt,
+      remoteStatus: error?.remoteStatus || '',
+      failureKind
+    };
+  }
 });
 
 ipcMain.handle('manifest:write', (_event, payload) => {
@@ -887,7 +981,7 @@ ipcMain.handle('tasks:listPending', (_event, payload) => {
     const manifest = readManifest(batchDir);
     const tasks = Array.isArray(manifest?.tasks) ? manifest.tasks : [];
     return tasks
-      .filter((task) => ['queued', 'running'].includes(task?.status) && !task?.outputPath)
+      .filter((task) => ['queued', 'running', 'unknown'].includes(task?.status) && !task?.outputPath)
       .map((task) => ({ ...task, batchDir, createdAt: task.createdAt || manifest?.createdAt || '' }));
   });
   return pendingTasks.sort((a, b) => {
@@ -1001,9 +1095,20 @@ ipcMain.handle('images:contextMenu', (event, payload) => {
 });
 
 ipcMain.handle('manifest:updateTask', (_event, payload) => {
-  const { batchDir, taskId, task } = unpackPayload(payload);
+  const { batchDir, taskId, task, resetRemoteTask } = unpackPayload(payload);
   if (!batchDir || !taskId || !task) throw new Error('任务 manifest 参数不完整');
-  const updated = updateManifestTask(batchDir, taskId, task);
+  const updated = updateManifestTask(batchDir, taskId, (currentTask) => {
+    const nextTask = { ...currentTask, ...task };
+    if (resetRemoteTask === true) {
+      nextTask.remoteTaskId = '';
+      nextTask.remoteStartedAt = '';
+      nextTask.remoteStatus = '';
+      return nextTask;
+    }
+    if (currentTask.remoteTaskId && !task.remoteTaskId) nextTask.remoteTaskId = currentTask.remoteTaskId;
+    if (currentTask.remoteStartedAt && !task.remoteStartedAt) nextTask.remoteStartedAt = currentTask.remoteStartedAt;
+    return nextTask;
+  });
   if (!updated) throw new Error('任务 manifest 不存在或任务已被删除');
   return updated;
 });

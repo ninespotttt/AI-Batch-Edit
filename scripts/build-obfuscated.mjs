@@ -10,6 +10,7 @@ const distDir = path.join(root, 'dist-protected');
 const protectedRoot = path.join(root, 'protected-main');
 const protectedDistDir = path.join(protectedRoot, 'dist');
 const protectedSrcDir = path.join(protectedRoot, 'src', 'main');
+const protectedSharedDir = path.join(protectedRoot, 'src', 'shared');
 const protectedStaticFiles = [
   '使用和密钥注册教程.pdf',
   '微信.png',
@@ -115,6 +116,7 @@ async function main() {
   await mkdir(path.join(protectedRoot, 'src'), { recursive: true });
   await mkdir(path.join(protectedRoot, 'build'), { recursive: true });
   await mkdir(protectedSrcDir, { recursive: true });
+  await mkdir(protectedSharedDir, { recursive: true });
 
   await writeProtectedPackageJson();
   await copyFileIfExists(path.join(root, 'notice.json'), path.join(protectedRoot, 'notice.json'));
@@ -123,6 +125,7 @@ async function main() {
     await copyFileIfExists(path.join(root, name), path.join(protectedRoot, name));
   }
   await cp(path.join(root, 'src', 'main'), protectedSrcDir, { recursive: true });
+  await cp(path.join(root, 'src', 'shared'), protectedSharedDir, { recursive: true });
   await cp(distDir, protectedDistDir, { recursive: true });
 
   const mainJsFiles = [

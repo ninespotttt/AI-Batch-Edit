@@ -1,0 +1,68 @@
+{
+  "qualitySchemaVersion": 2,
+  "models": [
+    {
+      "id": "rhart-image-g-2",
+      "label": "gpt-image2",
+      "qualityVisible": false,
+      "defaultQuality": "high",
+      "endpoint": "image-to-image",
+      "aspectRatios": ["3:2", "1:1", "2:3", "5:4", "4:5", "16:9", "9:16", "21:9", "3:4", "4:3", "9:21"],
+      "fallbackAspect": "1:1",
+      "resolutions": ["1k", "2k", "4k"]
+    },
+    {
+      "id": "rhart-image-g-2.5-official-token",
+      "label": "gpt-image2.5",
+      "qualityVisible": true,
+      "defaultQuality": "economy",
+      "tiers": [
+        { "value": "economy", "label": "低价" },
+        { "value": "medium", "label": "中等" },
+        { "value": "high", "label": "高质量" },
+        { "value": "max", "label": "最高质量" }
+      ],
+      "routes": {
+        "economy": {
+          "base": "rhart-image-g-2.5",
+          "endpoint": "sunburst/image-to-image",
+          "maxReferenceImages": 10,
+          "maxReferenceImageBytes": 52428800,
+          "aspectRatios": ["1:1", "2:3", "3:2", "4:5", "5:4", "4:3", "3:4", "16:9", "9:16", "21:9"],
+          "fallbackAspect": "1:1",
+          "resolutions": ["1k", "2k", "4k"]
+        },
+        "official": {
+          "base": "rhart-image-g-2.5-official-token",
+          "endpoint": "sunburst/edit",
+          "maxReferenceImages": 16,
+          "maxReferenceImageBytes": 52428800,
+          "aspectRatios": ["1:1", "1:2", "2:1", "1:3", "3:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "21:9", "9:21", "16:9"],
+          "fallbackAspect": "1:1",
+          "resolutions": ["1k", "2k", "4k"],
+          "payload": { "background": "auto", "outputFormat": "png" }
+        }
+      }
+    },
+    {
+      "id": "rhart-image-n-g31-flash",
+      "label": "Banana2",
+      "qualityVisible": false,
+      "defaultQuality": "high",
+      "endpoint": "image-to-image",
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "1:4", "4:1", "1:8", "8:1"],
+      "fallbackAspect": "1:1",
+      "resolutions": ["1k", "2k", "4k"]
+    },
+    {
+      "id": "rhart-image-n-pro",
+      "label": "Banana Pro",
+      "qualityVisible": false,
+      "defaultQuality": "high",
+      "endpoint": "edit",
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"],
+      "fallbackAspect": "1:1",
+      "resolutions": ["1k", "2k", "4k"]
+    }
+  ]
+}

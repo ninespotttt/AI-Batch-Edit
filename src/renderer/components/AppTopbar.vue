@@ -3,7 +3,7 @@
     <div class="brand">
       <img :src="logo" alt="万能AI批量编辑器" />
       <div class="brand-copy">
-        <h1>万能AI批量编辑器-V3</h1>
+        <h1>万能AI批量编辑器-V4</h1>
         <p class="eyebrow-copy">universal ai batch editor</p>
       </div>
     </div>

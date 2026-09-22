@@ -193,6 +193,7 @@ function stateLabel(task) {
     running: '生成中',
     success: '已完成',
     failed: '失败',
+    unknown: '提交状态未知，请到 RunningHub 后台核对',
     cancelled: '已取消'
   };
   if (task.status === 'failed') return friendlyFailureText(task.statusMessage);

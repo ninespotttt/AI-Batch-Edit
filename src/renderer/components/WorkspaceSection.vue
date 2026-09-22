@@ -89,7 +89,7 @@
             </div>
           </div>
 
-          <div class="param-grid workspace-param-grid">
+          <div class="param-grid workspace-param-grid" :class="{ 'has-quality': runninghubModel === 'rhart-image-g-2.5-official-token' }">
             <div class="field">
               <label>AI 模型</label>
               <select v-model="runninghubModel">
@@ -116,6 +116,34 @@
                 <option value="4K">4K</option>
               </select>
             </div>
+            <div v-if="runninghubModel === 'rhart-image-g-2.5-official-token'" class="field quality-field">
+              <label>质量</label>
+              <div ref="qualityPicker" class="quality-picker">
+                <button
+                  id="generation-quality"
+                  type="button"
+                  class="quality-trigger"
+                  aria-haspopup="listbox"
+                  :aria-expanded="qualityMenuOpen"
+                  @click.stop="qualityMenuOpen = !qualityMenuOpen"
+                >
+                  <span>{{ selectedQualityLabel }}</span>
+                  <ChevronDown :size="16" />
+                </button>
+                <div v-if="qualityMenuOpen" class="quality-menu" role="listbox" aria-label="生成质量选项">
+                  <button
+                    v-for="option in qualityOptions"
+                    :key="option.value"
+                    type="button"
+                    class="quality-option"
+                    :class="{ selected: quality === option.value }"
+                    role="option"
+                    :aria-selected="quality === option.value"
+                    @click="selectQuality(option.value)"
+                  >{{ option.label }}</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -138,7 +166,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ChevronDown, ChevronRight, GripVertical, Play, Trash2 } from 'lucide-vue-next';
 import UploadPanel from './UploadPanel.vue';
 
@@ -150,26 +178,42 @@ const launchError = defineModel('launchError', { type: String, required: true })
 const runninghubModel = defineModel('runninghubModel', { type: String, required: true });
 const aspectRatio = defineModel('aspectRatio', { type: String, required: true });
 const resolution = defineModel('resolution', { type: String, required: true });
+const quality = defineModel('quality', { type: String, required: true });
 
-defineProps({
+const props = defineProps({
   modelOptions: { type: Array, required: true },
+  qualityOptions: { type: Array, required: true },
   totalTasks: { type: Number, required: true },
   configConcurrency: { type: Number, required: true },
   canStart: { type: Boolean, required: true },
   launchReadinessText: { type: String, required: true },
   promptHistory: { type: Array, required: true }
 });
+const qualityOptions = computed(() => props.qualityOptions);
 
 const emit = defineEmits(['select-folder', 'select-files', 'drop-paths', 'remove', 'start', 'use-prompt-history', 'delete-prompt-history', 'paste-images']);
 
 const uploadAreaHeight = ref(340);
 const showPromptHistory = ref(false);
 const activeUploadTarget = ref('A');
+const qualityPicker = ref(null);
+const qualityMenuOpen = ref(false);
+const selectedQualityLabel = computed(() => qualityOptions.value.find((option) => option.value === quality.value)?.label || '低价');
 let isResizing = false;
 
 onMounted(() => {
   window.addEventListener('paste', handlePaste);
+  window.addEventListener('pointerdown', closeQualityMenuOnOutside);
 });
+
+function closeQualityMenuOnOutside(event) {
+  if (qualityPicker.value && !qualityPicker.value.contains(event.target)) qualityMenuOpen.value = false;
+}
+
+function selectQuality(value) {
+  quality.value = value;
+  qualityMenuOpen.value = false;
+}
 
 function clampHeight(value) {
   return Math.min(520, Math.max(260, value));
@@ -206,6 +250,7 @@ onBeforeUnmount(() => {
   isResizing = false;
   document.body.classList.remove('is-upload-resizing');
   window.removeEventListener('paste', handlePaste);
+  window.removeEventListener('pointerdown', closeQualityMenuOnOutside);
 });
 
 function readFileAsDataUrl(file) {

@@ -200,6 +200,7 @@ function taskStatusText(status) {
   if (status === 'failed') return '失败';
   if (status === 'cancelled') return '已取消';
   if (status === 'running') return '生成中';
+  if (status === 'unknown') return '提交状态未知';
   return '等待中';
 }
 

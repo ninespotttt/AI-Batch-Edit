@@ -3,10 +3,80 @@ const path = require('path');
 const FormData = require('form-data');
 const axios = require('axios');
 const sharp = require('sharp');
+const modelRegistry = require('../shared/runninghub-models.json');
 
 const RUNNINGHUB_API_BASE_URL = 'https://www.runninghub.ai';
 const UPLOAD_CACHE_LIMIT = 300;
+const REMOTE_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
+const QUERY_INTERVAL_MS = 4000;
+const MAX_DOWNLOAD_CONCURRENCY = 12;
+const MAX_SUBMISSION_CONCURRENCY = 8;
 const uploadUrlCache = new Map();
+const uploadInFlight = new Map();
+const downloadWaiters = [];
+const submissionWaiters = [];
+let activeDownloads = 0;
+let activeSubmissions = 0;
+let submissionsPausedUntil = 0;
+
+class RunningHubTaskError extends Error {
+  constructor(kind, message, details = {}) {
+    super(message);
+    this.name = 'RunningHubTaskError';
+    this.kind = kind;
+    Object.assign(this, details);
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function parseStartedAt(value) {
+  if (Number.isFinite(value)) return Number(value);
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function observationBackoff(attempt, baseInterval = QUERY_INTERVAL_MS) {
+  const steps = [baseInterval, 6000, 10000, 15000, 30000];
+  return steps[Math.min(Math.max(0, attempt - 1), steps.length - 1)];
+}
+
+async function withDownloadSlot(operation) {
+  if (activeDownloads >= MAX_DOWNLOAD_CONCURRENCY) {
+    await new Promise((resolve) => downloadWaiters.push(resolve));
+  }
+  activeDownloads += 1;
+  try {
+    return await operation();
+  } finally {
+    activeDownloads -= 1;
+    downloadWaiters.shift()?.();
+  }
+}
+
+async function withSubmissionSlot(operation) {
+  if (activeSubmissions >= MAX_SUBMISSION_CONCURRENCY) {
+    await new Promise((resolve) => submissionWaiters.push(resolve));
+  }
+  activeSubmissions += 1;
+  try {
+    if (Date.now() < submissionsPausedUntil) {
+      throw new RunningHubTaskError('SUBMIT_PAUSED', '检测到提交结果未知，其余未提交任务已暂停');
+    }
+    return await operation();
+  } finally {
+    activeSubmissions -= 1;
+    submissionWaiters.shift()?.();
+  }
+}
+
+function notifyProgress(callback, payload) {
+  try {
+    callback?.(payload);
+  } catch {}
+}
 
 function uploadCacheKey(filePath) {
   const stat = fs.statSync(filePath);
@@ -23,11 +93,15 @@ function rememberUploadUrl(key, url) {
 
 function clearUploadUrlCache() {
   uploadUrlCache.clear();
+  uploadInFlight.clear();
 }
 const MODEL_ALIASES = {
   'rhart-image-g-2': 'rhart-image-g-2',
   'gpt2': 'rhart-image-g-2',
   'gpt-image2': 'rhart-image-g-2',
+  'gpt-image2.5': 'rhart-image-g-2.5-official-token',
+  'gpt2.5': 'rhart-image-g-2.5-official-token',
+  'rhart-image-g-2.5': 'rhart-image-g-2.5-official-token',
   'rhart-image-g-2-official': 'rhart-image-g-2',
   'gpt-image2-official': 'rhart-image-g-2',
   'rhart-image-n-g31-flash': 'rhart-image-n-g31-flash',
@@ -43,7 +117,7 @@ const MODEL_ALIASES = {
   'bananapro-ultra': 'rhart-image-n-pro'
 };
 
-const LOW_COST_MODELS = new Set(['rhart-image-g-2', 'rhart-image-n-g31-flash', 'rhart-image-n-pro']);
+const LOW_COST_MODELS = new Set(modelRegistry.models.map((model) => model.id));
 
 function canonicalModel(model) {
   const raw = String(model || '').trim();
@@ -52,39 +126,42 @@ function canonicalModel(model) {
   return LOW_COST_MODELS.has(mapped) ? mapped : 'rhart-image-g-2';
 }
 
-function modelSpec(model) {
+function modelSpec(model, quality) {
   const base = canonicalModel(model);
-  if (base === 'rhart-image-g-2') {
+  const registered = modelRegistry.models.find((item) => item.id === base) || modelRegistry.models[0];
+  if (registered.tiers) {
+    const selectedQuality = String(quality || registered.defaultQuality);
+    const route = selectedQuality === 'economy'
+      ? registered.routes.economy
+      : registered.routes.official;
+    if (!registered.tiers.some((tier) => tier.value === selectedQuality)) {
+      throw new Error('请选择有效的生成档位');
+    }
     return {
-      base,
-      endpoint: 'image-to-image',
-      aspectRatios: ['3:2', '1:1', '2:3', '5:4', '4:5', '16:9', '9:16', '21:9', '3:4', '4:3', '9:21'],
-      fallbackAspect: '1:1',
-      resolutions: ['1k', '2k', '4k'],
-      quality: false
+      base: route.base,
+      endpoint: route.endpoint,
+      aspectRatios: route.aspectRatios,
+      fallbackAspect: route.fallbackAspect,
+      resolutions: route.resolutions,
+      maxReferenceImages: route.maxReferenceImages,
+      maxReferenceImageBytes: route.maxReferenceImageBytes,
+      quality: selectedQuality,
+      payload: route.payload || {},
+      model: registered.id
     };
   }
-  if (base === 'rhart-image-n-g31-flash') {
-    return {
-      base,
-      endpoint: 'image-to-image',
-      aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9', '1:4', '4:1', '1:8', '8:1'],
-      fallbackAspect: '1:1',
-      resolutions: ['1k', '2k', '4k'],
-      quality: false
-    };
-  }
-  if (base === 'rhart-image-n-pro') {
-    return {
-      base,
-      endpoint: 'edit',
-      aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'],
-      fallbackAspect: '1:1',
-      resolutions: ['1k', '2k', '4k'],
-      quality: false
-    };
-  }
-  return modelSpec('rhart-image-g-2');
+  return {
+    base: registered.id,
+    endpoint: registered.endpoint,
+    aspectRatios: registered.aspectRatios,
+    fallbackAspect: registered.fallbackAspect,
+    resolutions: registered.resolutions,
+    maxReferenceImages: registered.maxReferenceImages,
+    maxReferenceImageBytes: registered.maxReferenceImageBytes,
+    quality: false,
+    payload: {},
+    model: registered.id
+  };
 }
 
 async function prepareUploadBuffer(filePath) {
@@ -158,8 +235,9 @@ function uniqueSorted(scored) {
   return [...best.values()].sort((a, b) => b.score - a.score).map((item) => item.url);
 }
 
-function taskIdFrom(data) {
-  const value = firstNestedValue(data, new Set(['taskid', 'task_id', 'id']));
+function taskIdFrom(data, allowGenericId = true) {
+  let value = firstNestedValue(data, new Set(['taskid', 'task_id']));
+  if (!value && allowGenericId) value = firstNestedValue(data, new Set(['id']));
   return value ? String(value) : '';
 }
 
@@ -168,8 +246,6 @@ function statusFrom(data, urls) {
   const status = String(raw || '').trim().toLowerCase();
   if (['success', 'succeed', 'succeeded', 'completed', 'complete', 'finish', 'finished', 'done'].includes(status)) return 'SUCCESS';
   if (['failed', 'fail', 'failure', 'error', 'cancelled', 'canceled'].includes(status)) return 'FAILED';
-  if (urls.length > 0 && !status) return 'SUCCESS';
-  if (data && typeof data === 'object' && data.code !== undefined && data.code !== 0 && data.code !== '0') return 'FAILED';
   return status ? status.toUpperCase() : 'RUNNING';
 }
 
@@ -221,6 +297,16 @@ function normalizeRunningHubError(err) {
   return parseError(err);
 }
 
+function isTransientTransportError(err) {
+  const status = Number(err?.response?.status) || 0;
+  if (!err?.response) return true;
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function errorKind(err, fallback = 'LOCAL_FAILED') {
+  return err instanceof RunningHubTaskError && err.kind ? err.kind : fallback;
+}
+
 class RunningHubClient {
   constructor({ apiKey, baseUrl }) {
     if (!apiKey) throw new Error('请先在API设置中填写API Key');
@@ -243,7 +329,7 @@ class RunningHubClient {
       (data.code !== undefined && data.code !== 0 && data.code !== '0') ||
       (data.errorCode !== undefined && data.errorCode !== null && data.errorCode !== '')
     )) {
-      throw new Error(messageFrom(data).slice(0, 300));
+      throw new RunningHubTaskError('API_REJECTED', messageFrom(data).slice(0, 300));
     }
     return data;
   }
@@ -253,50 +339,117 @@ class RunningHubClient {
     const cacheKey = uploadCacheKey(filePath);
     const cachedUrl = uploadUrlCache.get(cacheKey);
     if (cachedUrl) return cachedUrl;
+    const pendingUpload = uploadInFlight.get(cacheKey);
+    if (pendingUpload) return pendingUpload;
 
-    const form = new FormData();
-    const buffer = await prepareUploadBuffer(filePath);
-    form.append('file', buffer, {
-      filename: path.basename(filePath),
-      contentType: contentType(filePath)
-    });
-    const response = await axios.post(`${this.host}/openapi/v2/media/upload/binary`, form, {
-      headers: { ...this.headers(false), ...form.getHeaders() },
-      timeout: 180000
-    });
-    const url = collectUrls(response.data)[0];
-    if (!url) throw new Error(`上传后没有返回素材地址: ${JSON.stringify(response.data).slice(0, 300)}`);
-    rememberUploadUrl(cacheKey, url);
-    return url;
+    const upload = (async () => {
+      const form = new FormData();
+      const buffer = await prepareUploadBuffer(filePath);
+      form.append('file', buffer, {
+        filename: path.basename(filePath),
+        contentType: contentType(filePath)
+      });
+      const response = await axios.post(`${this.host}/openapi/v2/media/upload/binary`, form, {
+        headers: { ...this.headers(false), ...form.getHeaders() },
+        timeout: 180000
+      });
+      const url = response.data?.data?.download_url;
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) {
+        throw new Error(`上传后没有返回有效的 data.download_url: ${JSON.stringify(response.data).slice(0, 300)}`);
+      }
+      const normalizedUrl = url.trim();
+      rememberUploadUrl(cacheKey, normalizedUrl);
+      return normalizedUrl;
+    })();
+    uploadInFlight.set(cacheKey, upload);
+    try {
+      return await upload;
+    } finally {
+      uploadInFlight.delete(cacheKey);
+    }
   }
 
-  async waitForResult(taskId, timeout = 900000, interval = 4000) {
-    const started = Date.now();
+  async queryTask(taskId) {
+    const response = await axios.post(`${this.host}/openapi/v2/query`, { taskId }, {
+      headers: this.headers(true),
+      timeout: 30000
+    });
+    return response.data;
+  }
+
+  async waitForResult(taskId, options = {}) {
+    const timeout = Number(options.timeout) > 0 ? Number(options.timeout) : REMOTE_WAIT_TIMEOUT_MS;
+    const interval = Number(options.interval) >= 0 ? Number(options.interval) : QUERY_INTERVAL_MS;
+    const started = parseStartedAt(options.startedAt);
+    const deadline = started + timeout;
     let lastStatus = 'RUNNING';
-    while (Date.now() - started < timeout) {
-      await new Promise((resolve) => setTimeout(resolve, interval));
-      const data = await this.postJson('/openapi/v2/query', { taskId }, 30000);
-      const urls = collectUrls(data);
-      const status = statusFrom(data, urls);
-      lastStatus = status;
-      if (['SUCCESS', 'SUCCEEDED', 'COMPLETED'].includes(status)) {
-        if (urls.length > 0) return urls[0];
-        throw new Error(`任务成功但没有返回图片地址: ${JSON.stringify(data).slice(0, 300)}`);
+    let observationFailures = 0;
+    let firstQuery = true;
+
+    while (firstQuery || Date.now() < deadline) {
+      if (!firstQuery) {
+        const waitMs = observationFailures > 0
+          ? observationBackoff(observationFailures, interval)
+          : interval;
+        await delay(Math.min(waitMs, Math.max(0, deadline - Date.now())));
       }
-      if (['FAILED', 'FAILURE', 'ERROR', 'CANCELED', 'CANCELLED'].includes(status)) {
-        throw new Error(`任务失败: ${messageFrom(data).slice(0, 300)}`);
+      firstQuery = false;
+
+      try {
+        const data = await this.queryTask(taskId);
+        const returnedTaskId = taskIdFrom(data, false);
+        if (returnedTaskId && returnedTaskId !== String(taskId)) {
+          throw new Error(`查询返回了不匹配的任务 ID: ${returnedTaskId}`);
+        }
+        const urls = collectUrls(data);
+        const status = statusFrom(data, urls);
+        lastStatus = status;
+        observationFailures = 0;
+        notifyProgress(options.onProgress, { status, message: status === 'SUCCESS' && urls.length === 0 ? '任务已生成，等待结果地址' : '生成中' });
+
+        if (status === 'SUCCESS' && urls.length > 0) return urls[0];
+        if (status === 'FAILED') {
+          throw new RunningHubTaskError('REMOTE_FAILED', `任务失败: ${messageFrom(data).slice(0, 300)}`, {
+            taskId: String(taskId),
+            remoteStatus: status
+          });
+        }
+      } catch (err) {
+        if (err instanceof RunningHubTaskError && err.kind === 'REMOTE_FAILED') throw err;
+        observationFailures += 1;
+        const message = normalizeRunningHubError(err);
+        notifyProgress(options.onProgress, { status: lastStatus, message: `连接异常，仍在等待：${message}` });
       }
     }
-    throw new Error(`图片任务等待超时，最后状态 ${lastStatus}`);
+    throw new RunningHubTaskError('WAIT_TIMEOUT', `等待超过15分钟，最后状态 ${lastStatus}`, {
+      taskId: String(taskId),
+      remoteStatus: lastStatus
+    });
   }
 
-  async createTask({ image1Path, image2Path, prompt, model, aspectRatio, resolution }) {
-    const spec = modelSpec(model);
-    const imageUrls = [await this.uploadFile(image1Path)];
-    if (image2Path) {
-      imageUrls.push(await this.uploadFile(image2Path));
+  async createTask({ referenceImagePaths, image1Path, image2Path, prompt, model, aspectRatio, resolution, quality }) {
+    const imagePaths = Array.isArray(referenceImagePaths) && referenceImagePaths.length > 0
+      ? referenceImagePaths.filter(Boolean)
+      : [image1Path, image2Path].filter(Boolean);
+    if (imagePaths.length === 0) throw new Error('至少需要一张参考图片');
+    const spec = modelSpec(model, quality);
+    if (spec.maxReferenceImages && imagePaths.length > spec.maxReferenceImages) {
+      throw new Error(`当前渠道最多支持 ${spec.maxReferenceImages} 张参考图片`);
     }
-    const sourceDimensions = await parseImageDimensions(image1Path);
+    if (spec.maxReferenceImageBytes) {
+      const oversizedPath = imagePaths.find((imagePath) => fs.existsSync(imagePath) && fs.statSync(imagePath).size > spec.maxReferenceImageBytes);
+      if (oversizedPath) throw new Error(`参考图片超过 ${Math.floor(spec.maxReferenceImageBytes / 1024 / 1024)} MB 限制`);
+    }
+    const imageUrls = [];
+    for (const imagePath of imagePaths) {
+      const uploadedUrl = await this.uploadFile(imagePath);
+      if (typeof uploadedUrl !== 'string' || !/^https?:\/\//i.test(uploadedUrl)) {
+        throw new Error('图片上传成功但没有得到有效的远程地址');
+      }
+      imageUrls.push(uploadedUrl);
+    }
+    if (imageUrls.length !== imagePaths.length) throw new Error('参考图片上传数量不一致，已停止提交');
+    const sourceDimensions = await parseImageDimensions(imagePaths[0]);
     const resolvedAspectRatio = aspectRatio === 'auto'
       ? nearestAspectRatio(sourceDimensions.width, sourceDimensions.height, spec.aspectRatios, spec.fallbackAspect)
       : aspectRatio;
@@ -309,26 +462,71 @@ class RunningHubClient {
     if (spec.resolutions.length > 0) {
       payload.resolution = spec.resolutions.includes(normalizedResolution) ? normalizedResolution : '2k';
     }
-    if (spec.quality) payload.quality = 'medium';
+    Object.assign(payload, spec.payload);
+    if (spec.quality && spec.quality !== 'economy') payload.quality = spec.quality;
 
-    const taskData = await this.postJson(`/openapi/v2/${spec.base}/${spec.endpoint}`, payload, 60000);
+    let taskData;
+    try {
+      taskData = await withSubmissionSlot(() => this.postJson(`/openapi/v2/${spec.base}/${spec.endpoint}`, payload, 60000));
+    } catch (err) {
+      if (err instanceof RunningHubTaskError && err.kind === 'SUBMIT_PAUSED') throw err;
+      if (err instanceof RunningHubTaskError && err.kind === 'API_REJECTED') {
+        throw new RunningHubTaskError('SUBMIT_FAILED', normalizeRunningHubError(err), { cause: err });
+      }
+      if (isTransientTransportError(err)) {
+        submissionsPausedUntil = Date.now() + 30000;
+        throw new RunningHubTaskError('SUBMIT_UNKNOWN', '提交结果未知：网络中断前 RunningHub 可能已经接收任务，请先到后台核对', {
+          cause: err
+        });
+      }
+      throw new RunningHubTaskError('SUBMIT_FAILED', normalizeRunningHubError(err), { cause: err });
+    }
     const taskId = taskIdFrom(taskData);
-    if (!taskId) throw new Error(`API 没有返回任务 ID: ${JSON.stringify(taskData).slice(0, 300)}`);
+    if (!taskId) {
+      throw new RunningHubTaskError('SUBMIT_UNKNOWN', `提交响应没有任务 ID，无法确认是否已创建任务: ${JSON.stringify(taskData).slice(0, 300)}`);
+    }
     return { taskId };
   }
 
-  async fetchResult(taskId) {
+  async downloadResult(url, deadline) {
+    let attempt = 0;
+    let lastError;
+    do {
+      attempt += 1;
+      try {
+        return await withDownloadSlot(async () => {
+          const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
+          const buffer = Buffer.from(response.data);
+          if (buffer.length === 0) throw new Error('下载结果为空');
+          await sharp(buffer, { failOn: 'none' }).metadata();
+          return buffer;
+        });
+      } catch (err) {
+        lastError = err;
+        if (Date.now() >= deadline) break;
+        await delay(Math.min(observationBackoff(attempt), Math.max(0, deadline - Date.now())));
+      }
+    } while (Date.now() < deadline);
+    throw new RunningHubTaskError('WAIT_TIMEOUT', `远端已生成，但图片下载超过15分钟：${normalizeRunningHubError(lastError)}`, {
+      remoteStatus: 'SUCCESS'
+    });
+  }
+
+  async fetchResult(taskId, options = {}) {
     if (!taskId) throw new Error('缺少远程任务 ID');
-    const url = await this.waitForResult(taskId);
-    const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
+    const startedAt = parseStartedAt(options.startedAt);
+    const timeout = Number(options.timeout) > 0 ? Number(options.timeout) : REMOTE_WAIT_TIMEOUT_MS;
+    const deadline = startedAt + timeout;
+    const url = await this.waitForResult(taskId, { ...options, startedAt, timeout });
+    const buffer = await this.downloadResult(url, deadline);
     return {
-      buffer: Buffer.from(response.data),
+      buffer,
       outputUrl: url
     };
   }
 
-  async generate({ image1Path, image2Path, prompt, model, aspectRatio, resolution }) {
-    const { taskId } = await this.createTask({ image1Path, image2Path, prompt, model, aspectRatio, resolution });
+  async generate({ image1Path, image2Path, prompt, model, aspectRatio, resolution, quality }) {
+    const { taskId } = await this.createTask({ image1Path, image2Path, prompt, model, aspectRatio, resolution, quality });
     const result = await this.fetchResult(taskId);
     return { ...result, taskId };
   }
@@ -384,7 +582,8 @@ async function generateRunningHubImage(options) {
     const client = new RunningHubClient(options);
     return await client.generate(options);
   } catch (err) {
-    throw new Error(normalizeRunningHubError(err));
+    if (err instanceof RunningHubTaskError) throw err;
+    throw new RunningHubTaskError(errorKind(err), normalizeRunningHubError(err), { cause: err });
   }
 }
 
@@ -393,20 +592,25 @@ async function startRunningHubImageTask(options) {
     const client = new RunningHubClient(options);
     return await client.createTask(options);
   } catch (err) {
-    throw new Error(normalizeRunningHubError(err));
+    if (err instanceof RunningHubTaskError) throw err;
+    throw new RunningHubTaskError(errorKind(err), normalizeRunningHubError(err), { cause: err });
   }
 }
 
 async function awaitRunningHubImageTask(options) {
   try {
     const client = new RunningHubClient(options);
-    return await client.fetchResult(options.taskId);
+    return await client.fetchResult(options.taskId, options);
   } catch (err) {
-    throw new Error(normalizeRunningHubError(err));
+    if (err instanceof RunningHubTaskError) throw err;
+    throw new RunningHubTaskError(errorKind(err), normalizeRunningHubError(err), { cause: err });
   }
 }
 
 module.exports = {
+  RunningHubClient,
+  RunningHubTaskError,
+  REMOTE_WAIT_TIMEOUT_MS,
   awaitRunningHubImageTask,
   generateRunningHubImage,
   canonicalModel,

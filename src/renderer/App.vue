@@ -22,7 +22,7 @@
 
     <div v-if="pendingRecoveryTasks.length && !recoveryBannerHidden" class="recovery-banner" role="status">
       <AlertCircle :size="17" />
-      <span>发现 {{ pendingRecoveryTasks.length }} 个未完成任务。已运行任务会继续查询，排队任务不会自动提交。</span>
+      <span>发现 {{ pendingRecoveryTasks.length }} 个未完成任务。已运行任务会继续查询，状态未知任务不会自动重提。</span>
       <button class="primary compact" type="button" @click="restorePendingTasks">恢复排队任务</button>
       <button class="icon-btn" type="button" title="稍后处理" @click="recoveryBannerHidden = true"><X :size="14" /></button>
     </div>
@@ -37,7 +37,9 @@
       v-model:runninghub-model="config.runninghubModel"
       v-model:aspect-ratio="params.aspectRatio"
       v-model:resolution="params.resolution"
+      v-model:quality="params.quality"
       :model-options="modelOptions"
+      :quality-options="qualityOptions"
       :total-tasks="totalTasks"
       :completed-count="completedCount"
       :config-concurrency="config.concurrency"
@@ -269,7 +271,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import modelRegistry from '../shared/runninghub-models.json';
 import { AlertCircle, CheckCircle2, Coffee, ExternalLink, Images, MessageCircle, Monitor, Settings, X } from 'lucide-vue-next';
 import AppTopbar from './components/AppTopbar.vue';
 import NoticeBar from './components/NoticeBar.vue';
@@ -292,11 +295,9 @@ const navItems = [
   { key: 'settings', label: '设置区域', icon: Settings }
 ];
 
-const MODEL_OPTIONS = [
-  { label: 'gpt-image2', value: 'rhart-image-g-2' },
-  { label: 'Banana2', value: 'rhart-image-n-g31-flash' },
-  { label: 'Banana Pro', value: 'rhart-image-n-pro' }
-];
+const MODEL_OPTIONS = modelRegistry.models.map(({ id, label }) => ({ label, value: id }));
+const GPT25_MODEL_ID = 'rhart-image-g-2.5-official-token';
+const GPT25_QUALITY_OPTIONS = modelRegistry.models.find((model) => model.id === GPT25_MODEL_ID)?.tiers || [];
 
 const LOW_COST_MODELS = new Set(MODEL_OPTIONS.map((model) => model.value));
 const RUNNINGHUB_API_BASE_URL = 'https://www.runninghub.ai';
@@ -304,7 +305,7 @@ const runninghubApiKeyUrl = 'https://www.runninghub.ai?inviteCode=wtfdbtbd';
 const douyinProfileUrl = 'https://www.douyin.com/user/MS4wLjABAAAAr9s0VYTHZPHXq1luRX-Gw1XgwVYeIaYc5anWLxeAmrGRC79UwhB5iBcTA6AjmE01';
 const DEFAULT_CONCURRENCY = 100;
 const MAX_CONCURRENCY = 100;
-const QUEUE_LAUNCH_INTERVAL_MS = 120;
+const QUEUE_LAUNCH_INTERVAL_MS = 300;
 
 const activeTab = ref('workspace');
 const imageSetA = ref([]);
@@ -340,6 +341,7 @@ const onboardingError = ref('');
 const pendingDeleteKeys = ref([]);
 let queueTimer = null;
 let operationNoticeTimer = null;
+let historyReloadTimer = null;
 let removeRecoveryListener = null;
 let removeCloseRequestListener = null;
 
@@ -361,10 +363,18 @@ const config = reactive({
 
 const params = reactive({
   aspectRatio: '3:4',
-  resolution: '2K'
+  resolution: '2K',
+  quality: 'high'
 });
 
 const modelOptions = MODEL_OPTIONS;
+const qualityOptions = GPT25_QUALITY_OPTIONS;
+
+watch(() => config.runninghubModel, (model, previousModel) => {
+  if (model === GPT25_MODEL_ID && previousModel !== GPT25_MODEL_ID) {
+    params.quality = 'economy';
+  }
+});
 
 const totalTasks = computed(() => (imageSetA.value.length > 0 ? imageSetA.value.length * Math.max(1, imageSetB.value.length) : 0));
 const canStart = computed(() => imageSetA.value.length > 0);
@@ -383,8 +393,10 @@ const statusText = computed(() => {
 });
 const runningCount = computed(() => tasks.value.filter((task) => task.status === 'running').length);
 const queuedCount = computed(() => tasks.value.filter((task) => task.status === 'queued').length);
+const unknownCount = computed(() => tasks.value.filter((task) => task.status === 'unknown').length);
 const exitConfirmDetail = computed(() => {
   if (runningCount.value > 0) return `当前还有 ${runningCount.value} 张图片正在生成，退出前建议先确认。`;
+  if (unknownCount.value > 0) return `当前有 ${unknownCount.value} 个提交状态未知的任务，请先到 RunningHub 后台核对。`;
   if (queuedCount.value > 0) return `当前还有 ${queuedCount.value} 张图片在等待生成，退出后队列会中断。`;
   return '如果还有任务在看，建议先确认一下再退出。';
 });
@@ -392,8 +404,8 @@ const exitConfirmDetail = computed(() => {
 const deleteConfirmDetail = computed(() => {
   const keys = new Set(pendingDeleteKeys.value);
   const selectedTasks = tasks.value.filter((task) => keys.has(`task:${task.id}`));
-  const runningTasks = selectedTasks.filter((task) => task.status === 'running');
-  const removableTasks = selectedTasks.filter((task) => task.status !== 'running');
+  const runningTasks = selectedTasks.filter((task) => ['running', 'unknown'].includes(task.status));
+  const removableTasks = selectedTasks.filter((task) => !['running', 'unknown'].includes(task.status));
   const selectedHistoryCount = historyItems.value.filter((item) => keys.has(`history:${item.path}`)).length;
   const removableCount = removableTasks.length + selectedHistoryCount;
   if (runningTasks.length > 0) return `将删除 ${removableCount} 张图片，${runningTasks.length} 张生成中的图片会保留。`;
@@ -403,6 +415,8 @@ const deleteConfirmDetail = computed(() => {
 onMounted(() => {
   if (window.batchApi.onRecoveryResult) {
     removeRecoveryListener = window.batchApi.onRecoveryResult(async (payload) => {
+      const currentTask = tasks.value.find((task) => task.id === payload?.taskId);
+      if (currentTask && payload?.task) Object.assign(currentTask, payload.task);
       await loadHistory();
       showOperationNotice(payload?.message || '已恢复远程任务结果。', payload?.status === 'success' ? 'success' : 'warning');
     });
@@ -419,6 +433,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearTimeout(queueTimer);
   clearTimeout(operationNoticeTimer);
+  clearTimeout(historyReloadTimer);
   if (typeof removeRecoveryListener === 'function') removeRecoveryListener();
   if (typeof removeCloseRequestListener === 'function') removeCloseRequestListener();
 });
@@ -429,7 +444,9 @@ async function saveConfig() {
   await window.batchApi.saveConfig(stringifySafe({
     ...config,
     aspectRatio: params.aspectRatio,
-    resolution: params.resolution
+    resolution: params.resolution,
+    quality: params.quality,
+    qualitySchemaVersion: modelRegistry.qualitySchemaVersion
   }));
 }
 
@@ -592,6 +609,15 @@ async function bootstrapInitialState() {
     config.promptHistory = normalizePromptHistory(config.promptHistory);
     params.aspectRatio = config.aspectRatio || '3:4';
     params.resolution = ['2K', '4K'].includes(config.resolution) ? config.resolution : '2K';
+    const isGpt25 = config.runninghubModel === GPT25_MODEL_ID;
+    if (isGpt25 && Number(config.qualitySchemaVersion || 0) < modelRegistry.qualitySchemaVersion) {
+      config.quality = 'economy';
+      config.qualitySchemaVersion = modelRegistry.qualitySchemaVersion;
+    }
+    params.quality = isGpt25 && GPT25_QUALITY_OPTIONS.some((option) => option.value === config.quality)
+      ? config.quality
+      : (isGpt25 ? 'economy' : 'high');
+    if (isGpt25) await saveConfig();
     showPricingNotice.value = !config.pricingNoticeAccepted;
     showOnboarding.value = !showPricingNotice.value && !config.onboardingCompleted;
     if (showOnboarding.value) onboardingShownAt.value = Date.now();
@@ -610,12 +636,12 @@ function restorePendingTasks() {
     return;
   }
   void window.batchApi.resumePendingTasks?.({ tasks: pendingRecoveryTasks.value });
-  const queued = pendingRecoveryTasks.value.filter((task) => task.status === 'queued');
+  const restorable = pendingRecoveryTasks.value.filter((task) => ['queued', 'unknown'].includes(task.status));
   const existingIds = new Set(tasks.value.map((task) => task.id));
-  const restored = queued.filter((task) => !existingIds.has(task.id));
+  const restored = restorable.filter((task) => !existingIds.has(task.id));
   if (restored.length === 0) {
     recoveryBannerHidden.value = true;
-    showOperationNotice('没有可恢复的排队任务，运行中的任务正在后台查询。', 'success');
+    showOperationNotice('没有可恢复的排队或待核对任务，运行中的任务正在后台查询。', 'success');
     return;
   }
   tasks.value = [...tasks.value, ...restored];
@@ -637,6 +663,9 @@ function normalizeModel(value) {
   const lower = raw.toLowerCase();
   const aliases = {
     'gpt-image2': 'rhart-image-g-2',
+    'gpt-image2.5': GPT25_MODEL_ID,
+    'gpt2.5': GPT25_MODEL_ID,
+    'rhart-image-g-2.5': GPT25_MODEL_ID,
     'gpt2': 'rhart-image-g-2',
     'banana2': 'rhart-image-n-g31-flash',
     'banana pro': 'rhart-image-n-pro',
@@ -656,6 +685,8 @@ function createRunOptions() {
     aspectRatio: params.aspectRatio,
     resolution: params.resolution,
     model: config.runninghubModel,
+    quality: params.quality,
+    channel: config.runninghubModel === GPT25_MODEL_ID && params.quality === 'economy' ? 'economy' : 'official',
     simulateFailures: config.simulateFailures
   };
 }
@@ -667,6 +698,8 @@ function toPlainRunOptions(options = {}) {
     aspectRatio: options.aspectRatio || '',
     resolution: options.resolution || '',
     model: options.model || '',
+    quality: options.quality || (options.model === GPT25_MODEL_ID ? 'economy' : 'high'),
+    channel: options.channel || (options.model === GPT25_MODEL_ID && options.quality === 'economy' ? 'economy' : 'official'),
     simulateFailures: options.simulateFailures === true
   };
 }
@@ -680,11 +713,15 @@ function toPlainTask(task) {
     image2Index: task.image2Index,
     image1Path: task.image1Path,
     image2Path: task.image2Path,
+    referenceImagePaths: task.referenceImagePaths || [task.image1Path, task.image2Path].filter(Boolean),
     batchDir: task.batchDir,
     outputName: task.outputName,
     outputPath: task.outputPath,
     outputUrl: task.outputUrl,
     remoteTaskId: task.remoteTaskId,
+    remoteStartedAt: task.remoteStartedAt,
+    remoteStatus: task.remoteStatus,
+    failureKind: task.failureKind,
     status: task.status,
     statusMessage: task.statusMessage,
     startedAt: task.startedAt,
@@ -702,11 +739,15 @@ function toManifestTask(task) {
     image2Index: task.image2Index,
     image1Path: task.image1Path,
     image2Path: task.image2Path,
+    referenceImagePaths: task.referenceImagePaths || [task.image1Path, task.image2Path].filter(Boolean),
     batchDir: task.batchDir,
     outputName: task.outputName,
     outputPath: task.outputPath,
     outputUrl: task.outputUrl,
     remoteTaskId: task.remoteTaskId,
+    remoteStartedAt: task.remoteStartedAt,
+    remoteStatus: task.remoteStatus,
+    failureKind: task.failureKind,
     status: task.status,
     statusMessage: task.statusMessage,
     startedAt: task.startedAt,
@@ -723,6 +764,14 @@ async function loadHistory() {
   historyItems.value = Array.isArray(items) ? items : [];
   const maxPage = Math.max(1, Math.ceil(historyItems.value.length / historyPageSize.value));
   if (historyPage.value > maxPage) historyPage.value = maxPage;
+}
+
+function scheduleHistoryReload() {
+  if (historyReloadTimer) return;
+  historyReloadTimer = setTimeout(() => {
+    historyReloadTimer = null;
+    void loadHistory();
+  }, 500);
 }
 
 async function checkNotice() {
@@ -851,7 +900,9 @@ async function beginGeneration() {
         aspectRatio: runOptions.aspectRatio,
         resolution: runOptions.resolution,
         provider: runOptions.provider,
-        model: runOptions.model
+        model: runOptions.model,
+        quality: runOptions.quality,
+        channel: runOptions.channel
       },
       tasks: newTasks.map(toManifestTask)
     }));
@@ -881,11 +932,15 @@ function buildTasks(startIndex = 0, runOptions = createRunOptions()) {
         image2Index: b ? image2Index : -1,
         image1Path: a.path,
         image2Path: b?.path || '',
+        referenceImagePaths: [a.path, b?.path].filter(Boolean),
         batchDir: '',
         outputName: '',
         outputPath: '',
         outputUrl: '',
         remoteTaskId: '',
+        remoteStartedAt: '',
+        remoteStatus: '',
+        failureKind: '',
         status: 'queued',
         statusMessage: '等待中',
         startedAt: '',
@@ -931,7 +986,7 @@ async function runTask(task) {
   task.finishedAt = '';
   task.outputPath = '';
   task.outputUrl = '';
-  task.remoteTaskId = '';
+  task.failureKind = '';
   try {
     await window.batchApi.updateManifestTask({
       batchDir: taskBatchDir,
@@ -944,19 +999,35 @@ async function runTask(task) {
       task: toPlainTask(task),
       options: runOptions
     }));
-    task.status = 'success';
-    task.statusMessage = '完成';
-    task.outputPath = result.outputPath;
-    task.outputUrl = result.outputUrl;
     task.remoteTaskId = result.remoteTaskId || task.remoteTaskId;
-    await loadHistory();
+    task.remoteStartedAt = result.remoteStartedAt || task.remoteStartedAt;
+    task.remoteStatus = result.remoteStatus || task.remoteStatus;
+    task.failureKind = result.failureKind || '';
+    if (result.status !== 'success') {
+      task.status = result.status || 'failed';
+      task.statusMessage = result.statusMessage || '生成失败';
+      if (task.status === 'unknown' || task.failureKind === 'SUBMIT_PAUSED') {
+        queuePaused.value = true;
+        clearTimeout(queueTimer);
+        showOperationNotice(task.status === 'unknown'
+          ? '提交状态未知，队列已暂停。请先到 RunningHub 后台核对，系统不会自动重提。'
+          : '检测到提交链路异常，其余未提交任务已安全暂停。');
+      } else if (shouldPauseQueue(task.statusMessage)) {
+        pauseQueueForAccountError();
+      }
+    } else {
+      task.status = 'success';
+      task.statusMessage = '完成';
+      task.outputPath = result.outputPath;
+      task.outputUrl = result.outputUrl;
+      scheduleHistoryReload();
+    }
   } catch (error) {
     task.status = 'failed';
     task.statusMessage = error?.message || '生成失败';
+    task.failureKind = 'LOCAL_FAILED';
     if (shouldPauseQueue(error?.message)) {
-      queuePaused.value = true;
-      clearTimeout(queueTimer);
-      showOperationNotice('检测到余额、Key 或权限问题，队列已暂停，请修复设置后再继续。');
+      pauseQueueForAccountError();
     }
   } finally {
     task.finishedAt = new Date().toISOString();
@@ -978,6 +1049,12 @@ function shouldPauseQueue(message) {
   return /(余额|余额不足|quota|balance|credit|insufficient|api key|unauthorized|forbidden|permission|401|402|403)/i.test(String(message || ''));
 }
 
+function pauseQueueForAccountError() {
+  queuePaused.value = true;
+  clearTimeout(queueTimer);
+  showOperationNotice('检测到余额、Key 或权限问题，队列已暂停，请修复设置后再继续。');
+}
+
 async function retryTask(task) {
   await requeueFailedTasks([task]);
 }
@@ -997,10 +1074,22 @@ async function requeueFailedTasks(sourceTasks) {
 
   let requeued = 0;
   for (const task of failedTasks) {
+    if (task.failureKind === 'SUBMIT_UNKNOWN') {
+      showOperationNotice('该任务提交结果未知，为避免重复扣费，请先到 RunningHub 后台核对。');
+      continue;
+    }
     const previous = toManifestTask(task);
+    const resetRemoteTask = task.failureKind === 'REMOTE_FAILED' || task.failureKind === 'SUBMIT_FAILED';
     task.status = 'queued';
     task.statusMessage = '等待重试';
-    task.remoteTaskId = '';
+    if (resetRemoteTask) {
+      task.remoteTaskId = '';
+      task.remoteStartedAt = '';
+      task.remoteStatus = '';
+    } else if (task.remoteTaskId) {
+      task.remoteStartedAt = new Date().toISOString();
+    }
+    task.failureKind = '';
     task.outputPath = '';
     task.outputUrl = '';
     task.startedAt = '';
@@ -1010,7 +1099,8 @@ async function requeueFailedTasks(sourceTasks) {
       await window.batchApi.updateManifestTask({
         batchDir: task.batchDir || batchDir.value,
         taskId: task.id,
-        task: toManifestTask(task)
+        task: toManifestTask(task),
+        resetRemoteTask
       });
       requeued += 1;
     } catch (error) {
@@ -1045,8 +1135,8 @@ async function performDeleteSelected(selectionKeys) {
   if (keys.size === 0) return;
 
   const selectedTasks = tasks.value.filter((task) => keys.has(`task:${task.id}`));
-  const runningTasks = selectedTasks.filter((task) => task.status === 'running');
-  const removableTasks = selectedTasks.filter((task) => task.status !== 'running');
+  const runningTasks = selectedTasks.filter((task) => ['running', 'unknown'].includes(task.status));
+  const removableTasks = selectedTasks.filter((task) => !['running', 'unknown'].includes(task.status));
   const removableTaskIds = new Set(removableTasks.map((task) => task.id));
   const affectedDirs = [...new Set(removableTasks.map((task) => task.batchDir || batchDir.value).filter(Boolean))];
   const taskOutputPaths = removableTasks.map((task) => task.outputPath).filter(Boolean);
@@ -1088,7 +1178,9 @@ async function writeCurrentManifest(targetBatchDir = '', replaceTasks = false) {
           aspectRatio: batchTasks[0]?.runOptions?.aspectRatio || params.aspectRatio,
           resolution: batchTasks[0]?.runOptions?.resolution || params.resolution,
           provider: batchTasks[0]?.runOptions?.provider || config.provider,
-          model: batchTasks[0]?.runOptions?.model || config.runninghubModel
+          model: batchTasks[0]?.runOptions?.model || config.runninghubModel,
+          quality: batchTasks[0]?.runOptions?.quality || 'high',
+          channel: batchTasks[0]?.runOptions?.channel || 'official'
         },
         summary: {
           total: batchTasks.length,

@@ -8,6 +8,7 @@
   "files": [
     "dist/**/*",
     "src/main/**/*",
+    "src/shared/**/*",
     "build/icon.ico",
     "notice.json",
     "使用和密钥注册教程.pdf",
