@@ -10,14 +10,13 @@
 # V5 更新：Banana 2.1 上线
 
 - 新增 Banana 2.1，支持 2K、4K 和更多图片比例，默认使用 2K。
-- Banana 新生成图片加入固定偏红修正。
-- 保留 Banana Pro，以及 GPT Image 2.5「低价」「中等」「高质量」「最高质量」四档。
-- 移除 Banana2、GPT Image 2.0 低价的新生成入口；已提交任务仍可查询、下载和恢复结果。
 - 改善任务恢复与结果保存，减少重复提交，避免覆盖已有图片。
 
 Windows 和 Mac 下载：[V5 发布页](https://github.com/ninespotttt/AI-Batch-Edit/releases/tag/V5)。
 
-升级时请保留原输出目录及历史图片。旧设置若选着已移除模型，请主动选择 Banana 2.1、Banana Pro 或 GPT Image 2.5。
+百度网盘：[下载链接](https://pan.baidu.com/s/12srDmH8T7PP3i93aN8ypog)，提取码：`nsw3`。
+
+升级时请保留原输出目录及历史图片。
 
 本次已完成 Windows 成品启动和离线回归；Mac 已完成双架构包及资源校验，尚未进行真机测试。未进行真实 RH 付费生成测试。
 

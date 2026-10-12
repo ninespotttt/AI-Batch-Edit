@@ -3,7 +3,7 @@
   "id": "2026-10-12-v5-banana21",
   "type": "update",
   "title": "V5 更新：Banana 2.1 上线",
-  "message": "V5 已上线：新增 Banana 2.1，支持 2K、4K 和更多比例；Banana 新生成图片加入固定偏红修正。保留 Banana Pro 及 GPT Image 2.5「低价／中等／高质量／最高质量」四档。移除 Banana2、GPT Image 2.0 低价的新生成入口；已提交任务仍可恢复结果。Windows 和 Mac 下载请点击右侧按钮。",
+  "message": "V5 已上线：新增 Banana 2.1，支持 2K、4K 和更多比例。百度网盘：https://pan.baidu.com/s/12srDmH8T7PP3i93aN8ypog 提取码：nsw3",
   "buttonText": "下载 V5 新版",
   "buttonUrl": "https://github.com/ninespotttt/AI-Batch-Edit/releases/tag/V5",
   "force": false
