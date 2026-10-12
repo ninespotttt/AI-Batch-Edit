@@ -6,7 +6,10 @@
 
 - 项目根目录：`D:\支点引入-万能AI批量编辑器`
 - Electron 打包产物：`release/win-unpacked/万能AI批量编辑器.exe`
-- 压缩包产物：`release/万能AI批量编辑器-win.zip`
+- 普通版压缩包：`release/万能AI批量编辑器-V5-win.zip`
+- 混淆版程序：`release-obfuscated/win-unpacked/万能AI批量编辑器.exe`
+- 混淆版压缩包：`release-obfuscated/万能AI批量编辑器-V5-win.zip`
+- Mac 混淆双架构包：`release-obfuscated/万能AI批量编辑器-V5-mac.zip`
 
 ## 已确认的关键规则
 
